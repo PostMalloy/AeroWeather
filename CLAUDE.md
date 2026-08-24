@@ -66,6 +66,8 @@ network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
   payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength
   ClientPayloadHandler.java           updates client.ClientWindState on receipt
+  WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat (per simulation step)
+  PlayerSyncListener.java             PlayerLoggedInEvent/PlayerChangedDimensionEvent/PlayerRespawnEvent -> WindSync.sendTo(player)
 
 client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
@@ -92,9 +94,11 @@ integration/
 ```
 
 Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, a placeholder
-`Config.java`, the full `wind/` package (M1), and `command/` +
-`registry/AeroWeatherCommandArgumentTypes.java` (M3). Everything else in
-the table above is still planned (see roadmap below).
+`Config.java`, the full `wind/` package (M1), `command/` +
+`registry/AeroWeatherCommandArgumentTypes.java` (M3), and the full
+`network/` package + `client/ClientWindState.java` (M2). Still planned:
+`config/` (M5), `client/particle/` + `registry/AeroWeatherParticles.java`
+(M4), and `integration/` (M6/M7).
 
 ## Wind system design
 
@@ -184,7 +188,10 @@ but don't actively make future extension harder either:
   alongside M1 since `wind info` was the only way to observe wind state
   before networking/particles existed — verified end-to-end via RCON
   against a live dev server)
-- M2 — Networking sync
+- ~~M2 — Networking sync~~ (`ClientboundWindSyncPayload`, `WindSync`,
+  `PlayerSyncListener`, `ClientWindState`; verified over a real socket
+  connection between a separate dedicated server and client, not just
+  integrated singleplayer)
 - M4 — Particles
 - M5 — Config finalization (`AeroWeatherCommonConfig`/`AeroWeatherClientConfig`)
   — **checkpoint**: mod is fully standalone here, zero external
