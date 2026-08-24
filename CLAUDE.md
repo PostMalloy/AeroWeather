@@ -163,8 +163,8 @@ tested in open sky at altitude.
 - Per-`ServerLevel` state stored in `SavedData` (naturally per-dimension —
   no special-casing needed, e.g. `isRaining()` is just always false in
   the Nether/End so the weather-boost term is always 0 there).
-- Effective strength = `overridden ? overrideStrength : clamp(baseStrength
-  + weatherBoost, 0, 100)`.
+- Effective strength = `overridden ? overrideStrength : min(clamp(baseStrength
+  + gustStrength + weatherBoost, 0, 100), currentStrengthCap())`.
 - Natural drift: periodically re-roll a target direction/strength within
   a bounded delta, lerp current value toward it each simulation step
   (plain random-walk-with-lerp — no noise library needed for v1).
@@ -195,6 +195,20 @@ tested in open sky at altitude.
 - `weatherBoost` eases (doesn't snap) toward 0 / rain-boost /
   thunder-boost based on `level.isRaining()`/`isThundering()` so weather
   starting/stopping never jump-cuts wind.
+- Natural (non-overridden) strength is additionally capped per weather
+  tier via `currentStrengthCap()`:
+  `AeroWeatherCommonConfig.STRENGTH_CAP_CLEAR`/`_RAIN`/`_THUNDER`
+  (defaults 50/75/100), applied as a `Math.min` after drift + gust +
+  weatherBoost are summed and clamped. This bounds the base 0-100 value
+  only — it's separate from and upstream of `WindHeightScaling`'s
+  elevation adjustment, which can still push the reported/rendered
+  strength above the tier cap at high elevation. Overridden strength
+  (via the command) ignores the cap entirely, same as it already ignores
+  drift/gust/weatherBoost. Verified live: forcing `gust.chancePerSecond`,
+  `minMagnitude`/`maxMagnitude` high enough to guarantee the pre-cap sum
+  exceeds every tier's cap, then cycling weather clear -> rain -> thunder
+  via RCON and confirming `/aeroweather wind info` reported exactly
+  50, 75, then 100.
 - Command override pins an absolute direction/strength and **freezes**
   natural drift while active; `reset` resumes drift from wherever it was.
 - Simulation runs at ~1 Hz (every 20 ticks, gated inside a
