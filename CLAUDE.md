@@ -95,10 +95,21 @@ integration/
 
 Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, a placeholder
 `Config.java`, the full `wind/` package (M1), `command/` +
-`registry/AeroWeatherCommandArgumentTypes.java` (M3), and the full
-`network/` package + `client/ClientWindState.java` (M2). Still planned:
-`config/` (M5), `client/particle/` + `registry/AeroWeatherParticles.java`
-(M4), and `integration/` (M6/M7).
+`registry/AeroWeatherCommandArgumentTypes.java` (M3), the full
+`network/` package + `client/ClientWindState.java` (M2), and
+`client/particle/` + `registry/AeroWeatherParticles.java` (M4). Still
+planned: `config/` (M5) and `integration/` (M6/M7).
+
+Particle textures live at
+`assets/aeroweather/textures/particle/windparticle{1-8}.png`, declared
+in `assets/aeroweather/particles/wind_streak.json`. `WindStreakParticle`
+cycles them on a fixed 200ms-per-frame loop (deliberately not vanilla's
+`setSpriteFromAge`, which spreads all frames evenly across the
+particle's lifetime once with no looping) by indexing `SpriteSet`
+directly: since `SpriteSet` only exposes `get(age, maxAge)` with an
+internal `age*(size-1)/maxAge` formula, calling `get(frame, FRAME_COUNT
+- 1)` resolves to exactly `frame` — the only way to get indexed access
+without a native by-index accessor.
 
 ## Wind system design
 
@@ -192,7 +203,10 @@ but don't actively make future extension harder either:
   `PlayerSyncListener`, `ClientWindState`; verified over a real socket
   connection between a separate dedicated server and client, not just
   integrated singleplayer)
-- M4 — Particles
+- ~~M4 — Particles~~ (`WindStreakParticle`, `AeroWeatherParticleProviders`,
+  `WindParticleSpawner`, `AeroWeatherParticles`; verified visually via
+  screenshots of a live client — particles spawn at expected positions,
+  render cleanly, and the flipbook demonstrably cycles frames)
 - M5 — Config finalization (`AeroWeatherCommonConfig`/`AeroWeatherClientConfig`)
   — **checkpoint**: mod is fully standalone here, zero external
   dependencies, all non-Aeronautics requirements delivered
