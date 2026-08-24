@@ -76,6 +76,7 @@ client/
 
 registry/
   AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK
+  AeroWeatherCommandArgumentTypes.java  DeferredRegister<ArgumentTypeInfo<?,?>>: registers DirectionArgument for command-tree sync
 
 command/
   AeroWeatherCommand.java             /aeroweather wind <direction> <strength> | reset | info  (op-level)
@@ -90,8 +91,10 @@ integration/
     AeronauticsIntegration.java       resolves Noop vs real applier based on ModCompat
 ```
 
-Only `AeroWeather.java`, `AeroWeatherClient.java`, and a placeholder
-`Config.java` exist so far (see roadmap below).
+Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, a placeholder
+`Config.java`, the full `wind/` package (M1), and `command/` +
+`registry/AeroWeatherCommandArgumentTypes.java` (M3). Everything else in
+the table above is still planned (see roadmap below).
 
 ## Wind system design
 
@@ -105,7 +108,12 @@ Only `AeroWeather.java`, `AeroWeatherClient.java`, and a placeholder
   (plain random-walk-with-lerp — no noise library needed for v1).
 - Gusts: short probabilistic additive spikes that decay, layered on top
   of the drift value.
-- Wind increases with height above ground level: z-level of world dictates intensity of wind via a power-law relationship. 
+- Wind increases with height above ground level: a power-law relationship
+  on height dictates intensity. Not yet implemented — `WindState` is
+  still purely per-dimension with no positional input; this becomes
+  relevant once something samples wind at a specific point (M4 particles,
+  M7 force application). Exact exponent/reference height are unspecified
+  — see open questions.
 - `weatherBoost` eases (doesn't snap) toward 0 / rain-boost /
   thunder-boost based on `level.isRaining()`/`isThundering()` so weather
   starting/stopping never jump-cuts wind.
@@ -168,12 +176,14 @@ but don't actively make future extension harder either:
 
 ## Roadmap / milestones
 
-- ~~M0 — Repo/template scaffolding~~ (this commit: CLAUDE.md, LICENSE,
-  MIT license wiring, stock example content stripped, git initialized)
-- M1 — Wind state core (server-only: `WindState`, `WindSavedData`,
+- ~~M0 — Repo/template scaffolding~~ (CLAUDE.md, LICENSE, MIT license
+  wiring, stock example content stripped, git initialized)
+- ~~M1 — Wind state core~~ (server-only: `WindState`, `WindSavedData`,
   `WindDirection`, `WindSimulator`)
-- M3 — Command (sequence alongside M1 — `wind info` is the only way to
-  observe wind state before networking/particles exist)
+- ~~M3 — Command~~ (`AeroWeatherCommand`, `DirectionArgument`; sequenced
+  alongside M1 since `wind info` was the only way to observe wind state
+  before networking/particles existed — verified end-to-end via RCON
+  against a live dev server)
 - M2 — Networking sync
 - M4 — Particles
 - M5 — Config finalization (`AeroWeatherCommonConfig`/`AeroWeatherClientConfig`)
@@ -237,3 +247,7 @@ Resolve these before relying on them — don't let assumptions calcify:
 - Exact NeoForge 1.21.1 method signatures for `SavedData.Factory`
   (post-1.20.5 takes a `HolderLookup.Provider`) and the `PacketDistributor`
   static helper for "send to all players in a dimension."
+- Height-based wind scaling: exponent, reference height, and minimum/
+  maximum multiplier for the power-law relationship between altitude and
+  wind intensity (see "Wind system design" above) — needed before M4/M7
+  can sample wind at a specific position.
