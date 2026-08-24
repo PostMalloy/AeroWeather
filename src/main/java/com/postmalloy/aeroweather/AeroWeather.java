@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
+import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -27,5 +28,8 @@ public class AeroWeather {
 
         // Register the custom /aeroweather command's Brigadier argument types
         AeroWeatherCommandArgumentTypes.COMMAND_ARGUMENT_TYPES.register(modEventBus);
+
+        // Register wind particle types
+        AeroWeatherParticles.PARTICLE_TYPES.register(modEventBus);
     }
 }
