@@ -35,6 +35,7 @@ public final class WindParticleSpawner {
     private static final float MAX_PARTICLES_PER_TICK = 1.0F; // at strength 100
     private static final float MIN_SPEED = 0.05F; // at strength >0
     private static final float MAX_SPEED = 0.4F; // at strength 100
+    private static final float DIRECTION_JITTER_DEG = 5.0F; // per-particle horizontal deviation from wind direction
     private static final boolean OUTDOORS_ONLY = true;
 
     private static float spawnAccumulator;
@@ -83,8 +84,10 @@ public final class WindParticleSpawner {
             return;
         }
 
-        // Travel direction: wind blows FROM directionDeg TOWARD the opposite bearing.
-        double bearingRad = Math.toRadians(directionDeg);
+        // Travel direction: wind blows FROM directionDeg TOWARD the opposite bearing,
+        // with a small per-particle deviation so the drift doesn't look perfectly uniform.
+        float jitteredDirectionDeg = directionDeg + (random.nextFloat() * 2.0F - 1.0F) * DIRECTION_JITTER_DEG;
+        double bearingRad = Math.toRadians(jitteredDirectionDeg);
         double travelX = -Math.sin(bearingRad);
         double travelZ = Math.cos(bearingRad);
 
