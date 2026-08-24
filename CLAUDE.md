@@ -105,6 +105,7 @@ Only `AeroWeather.java`, `AeroWeatherClient.java`, and a placeholder
   (plain random-walk-with-lerp — no noise library needed for v1).
 - Gusts: short probabilistic additive spikes that decay, layered on top
   of the drift value.
+- Wind increases with height above ground level: z-level of world dictates intensity of wind via a power-law relationship. 
 - `weatherBoost` eases (doesn't snap) toward 0 / rain-boost /
   thunder-boost based on `level.isRaining()`/`isThundering()` so weather
   starting/stopping never jump-cuts wind.
