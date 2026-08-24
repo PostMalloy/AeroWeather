@@ -93,12 +93,13 @@ integration/
     AeronauticsIntegration.java       resolves Noop vs real applier based on ModCompat
 ```
 
-Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, a placeholder
-`Config.java`, the full `wind/` package (M1), `command/` +
-`registry/AeroWeatherCommandArgumentTypes.java` (M3), the full
-`network/` package + `client/ClientWindState.java` (M2), and
-`client/particle/` + `registry/AeroWeatherParticles.java` (M4). Still
-planned: `config/` (M5) and `integration/` (M6/M7).
+Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, the full
+`wind/` package (M1), `command/` + `registry/AeroWeatherCommandArgumentTypes.java`
+(M3), the full `network/` package + `client/ClientWindState.java` (M2),
+`client/particle/` + `registry/AeroWeatherParticles.java` (M4), and the
+full `config/` package (M5) — **checkpoint reached: the mod is fully
+standalone, config-tunable, zero external dependencies**. Still planned:
+`integration/` (M6/M7).
 
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png`, declared
@@ -252,9 +253,13 @@ but don't actively make future extension harder either:
   `WindParticleSpawner`, `AeroWeatherParticles`; verified visually via
   screenshots of a live client — particles spawn at expected positions,
   render cleanly, and the flipbook demonstrably cycles frames)
-- M5 — Config finalization (`AeroWeatherCommonConfig`/`AeroWeatherClientConfig`)
-  — **checkpoint**: mod is fully standalone here, zero external
-  dependencies, all non-Aeronautics requirements delivered
+- ~~M5 — Config finalization~~ (`AeroWeatherCommonConfig`/`AeroWeatherClientConfig`,
+  replacing the placeholder `Config.java`; verified both
+  `aeroweather-common.toml`/`aeroweather-client.toml` generate correctly
+  and the simulation still runs right reading from config, over a live
+  server+client with RCON) — **checkpoint reached**: mod is fully
+  standalone, config-tunable, zero external dependencies, all
+  non-Aeronautics requirements delivered
 - M6 — Create Aeronautics research spike: add Create/Aeronautics/Sable as
   `compileOnly`+`localRuntime`, inspect the actual jars (decompiler /
   `javap`) to confirm sub-level enumeration, exterior geometry access,
