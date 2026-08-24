@@ -111,6 +111,23 @@ internal `age*(size-1)/maxAge` formula, calling `get(frame, FRAME_COUNT
 - 1)` resolves to exactly `frame` — the only way to get indexed access
 without a native by-index accessor.
 
+Particles spawn at a random angle around the player (not just upwind —
+they drift toward the travel direction regardless of spawn angle, so
+this only affects ambience, not readability) and both spawn rate and
+drift speed scale with wind strength. Orientation is NOT the default
+camera-billboard (`SingleQuadParticle`'s `LOOKAT_XYZ`, which always
+faces the camera regardless of travel direction — a billboard looks
+identical from every angle no matter which way it's actually moving,
+defeating the point of a directional texture); `WindStreakParticle`
+overrides `getFacingCameraMode()` to return a fixed world-space
+orientation computed once from the velocity vector at spawn (a vertical
+card containing the travel vector, normal perpendicular to it). Verified
+empirically, not just derived: with wind traveling perpendicular to the
+camera's view axis, particles show full-width shapes; parallel to the
+view axis, the same particles show as thin edge-on slivers — that
+apparent-width change with viewing angle is only possible with a real
+world-space orientation, not a billboard.
+
 ## Wind system design
 
 - Per-`ServerLevel` state stored in `SavedData` (naturally per-dimension —
