@@ -174,21 +174,24 @@ tested in open sky at altitude.
   `wind/WindHeightScaling.java`, approximating the real-world wind
   profile power law: 0 at or below sea level, reaching the unmodified
   base strength at a configurable reference height above sea level
-  (`AeroWeatherClientConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default
+  (`AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default
   100 blocks), and growing further above that up to a configurable cap
   (`HEIGHT_MAX_MULTIPLIER`, default 3x). Kept as a standalone pure
   function (not baked into `WindState`, which stays purely per-dimension
   with no positional input) since a server-side consumer is expected
   once M7 (Aeronautics force application) needs to sample wind at a
-  contraption's position too. Currently only wired into
-  `WindParticleSpawner` (client-side), computed once per tick from the
-  player's Y — the curve parameters live in `AeroWeatherClientConfig`,
-  not the common config, because this only affects client rendering
-  right now and NeoForge's common config isn't automatically synced from
-  server to client. Verified numerically against a live server+client:
-  teleporting through a range of heights and logging the computed values
-  matched the formula exactly at every sampled point (0 below/at sea
-  level, exactly the base strength at the reference height, etc.).
+  contraption's position too. Wired into both `WindParticleSpawner`
+  (client-side, computed once per tick from the player's Y) and
+  `AeroWeatherCommand`'s `wind info` (server-side, from the command
+  source's position). The curve parameters live in the common config,
+  not the client config: the command needs to read them server-side
+  (a client-only config wouldn't even be loaded there), and now that a
+  command reports this value it's closer to game state than pure
+  rendering flourish anyway. Verified numerically against a live
+  server+client, both consumers independently: teleporting through a
+  range of heights and checking the computed/reported values matched the
+  formula exactly at every sampled point (0 below/at sea level, exactly
+  the base strength at the reference height, etc.).
 - `weatherBoost` eases (doesn't snap) toward 0 / rain-boost /
   thunder-boost based on `level.isRaining()`/`isThundering()` so weather
   starting/stopping never jump-cuts wind.
@@ -208,7 +211,7 @@ tested in open sky at altitude.
 ```
 /aeroweather wind <direction> <strength>   set wind (direction: cardinal keyword like "north"/"ne", or a degree float)
 /aeroweather wind reset                    resume natural simulation
-/aeroweather wind info                     report current direction/strength and whether overridden/weather-boosted
+/aeroweather wind info                     report direction/strength (base and elevation-adjusted at the command source's position) and whether overridden/weather-boosted
 ```
 
 Requires operator permission (level 2). `<strength>` is clamped 0–100.
