@@ -3,6 +3,7 @@ package com.postmalloy.aeroweather.network;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.payload.ClientboundWindSyncPayload;
 import com.postmalloy.aeroweather.wind.WindDirection;
 import com.postmalloy.aeroweather.wind.WindSavedData;
@@ -19,13 +20,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * command overrides and full per-player syncs (join/dimension
  * change/respawn), otherwise only when the effective wind has drifted
  * past a small threshold or a heartbeat interval has elapsed — never
- * every tick. See CLAUDE.md's "Wind system design" for the thresholds.
+ * every tick. Thresholds come from {@link AeroWeatherCommonConfig}. See
+ * CLAUDE.md's "Wind system design" for the model.
  */
 public final class WindSync {
-    private static final float DIRECTION_THRESHOLD_DEG = 2.0f;
-    private static final float STRENGTH_THRESHOLD = 1.0f;
-    private static final long HEARTBEAT_TICKS = 100; // ~5s
-
     private static final Map<ResourceKey<Level>, Tracker> TRACKERS = new HashMap<>();
 
     private WindSync() {
@@ -37,9 +35,13 @@ public final class WindSync {
         WindState wind = savedData.wind();
         long now = level.getGameTime();
 
-        boolean directionChanged = WindDirection.angularDifference(wind.directionDeg(), tracker.directionDeg) > DIRECTION_THRESHOLD_DEG;
-        boolean strengthChanged = Math.abs(wind.strength() - tracker.strength) >= STRENGTH_THRESHOLD;
-        boolean heartbeatElapsed = now - tracker.lastSyncTick >= HEARTBEAT_TICKS;
+        float directionThreshold = (float) AeroWeatherCommonConfig.SYNC_DIRECTION_THRESHOLD_DEG.getAsDouble();
+        float strengthThreshold = (float) AeroWeatherCommonConfig.SYNC_STRENGTH_THRESHOLD.getAsDouble();
+        long heartbeatTicks = AeroWeatherCommonConfig.SYNC_HEARTBEAT_SECONDS.get() * 20L;
+
+        boolean directionChanged = WindDirection.angularDifference(wind.directionDeg(), tracker.directionDeg) > directionThreshold;
+        boolean strengthChanged = Math.abs(wind.strength() - tracker.strength) >= strengthThreshold;
+        boolean heartbeatElapsed = now - tracker.lastSyncTick >= heartbeatTicks;
 
         if (tracker.lastSyncTick < 0 || directionChanged || strengthChanged || heartbeatElapsed) {
             broadcast(level, wind);

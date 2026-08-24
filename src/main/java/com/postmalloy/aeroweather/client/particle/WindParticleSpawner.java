@@ -2,6 +2,7 @@ package com.postmalloy.aeroweather.client.particle;
 
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.client.ClientWindState;
+import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 
 import net.minecraft.client.Minecraft;
@@ -21,23 +22,11 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * (not just upwind) and drift in the wind's travel direction regardless
  * of where they started, so the ones that happen to spawn downwind
  * simply have less visible travel time before expiring. Both spawn rate
- * and drift speed scale with wind strength. Spawn rate/radius/etc. are
- * hardcoded for now; they become configurable in a later milestone (see
- * CLAUDE.md roadmap, M5), matching the same convention used in
- * wind/WindState.
+ * and drift speed scale with wind strength. Tuning comes from
+ * {@link AeroWeatherClientConfig}.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
-    private static final float MIN_RADIUS = 8.0F;
-    private static final float MAX_RADIUS = 20.0F;
-    private static final float LATERAL_JITTER = 4.0F;
-    private static final float HEIGHT_JITTER = 3.0F;
-    private static final float MAX_PARTICLES_PER_TICK = 1.0F; // at strength 100
-    private static final float MIN_SPEED = 0.05F; // at strength >0
-    private static final float MAX_SPEED = 0.4F; // at strength 100
-    private static final float DIRECTION_JITTER_DEG = 5.0F; // per-particle horizontal deviation from wind direction
-    private static final boolean OUTDOORS_ONLY = true;
-
     private static float spawnAccumulator;
 
     private WindParticleSpawner() {
@@ -45,6 +34,10 @@ public final class WindParticleSpawner {
 
     @SubscribeEvent
     static void onClientTick(ClientTickEvent.Post event) {
+        if (!AeroWeatherClientConfig.PARTICLES_ENABLED.get()) {
+            return;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         LocalPlayer player = minecraft.player;
@@ -62,7 +55,8 @@ public final class WindParticleSpawner {
             return;
         }
 
-        spawnAccumulator += MAX_PARTICLES_PER_TICK * (strength / 100.0F);
+        float maxParticlesPerTick = (float) AeroWeatherClientConfig.MAX_PARTICLES_PER_TICK.getAsDouble();
+        spawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
         while (spawnAccumulator >= 1.0F) {
             spawnAccumulator -= 1.0F;
             spawnOne(level, player, ClientWindState.directionDeg(), strength);
@@ -72,26 +66,34 @@ public final class WindParticleSpawner {
     private static void spawnOne(ClientLevel level, LocalPlayer player, float directionDeg, float strength) {
         RandomSource random = level.random;
 
+        float minRadius = (float) AeroWeatherClientConfig.MIN_RADIUS.getAsDouble();
+        float maxRadius = (float) AeroWeatherClientConfig.MAX_RADIUS.getAsDouble();
+        float lateralJitter = (float) AeroWeatherClientConfig.LATERAL_JITTER.getAsDouble();
+        float heightJitter = (float) AeroWeatherClientConfig.HEIGHT_JITTER.getAsDouble();
+
         // Spawn at a random angle around the player - particles drift with the
         // wind regardless of where they started, they don't need to start upwind.
         double spawnAngle = random.nextDouble() * (Math.PI * 2.0);
-        float radius = MIN_RADIUS + random.nextFloat() * (MAX_RADIUS - MIN_RADIUS);
-        double x = player.getX() + Math.sin(spawnAngle) * radius + (random.nextFloat() - 0.5) * LATERAL_JITTER;
-        double y = player.getEyeY() + (random.nextFloat() - 0.5) * HEIGHT_JITTER;
-        double z = player.getZ() + Math.cos(spawnAngle) * radius + (random.nextFloat() - 0.5) * LATERAL_JITTER;
+        float radius = minRadius + random.nextFloat() * (maxRadius - minRadius);
+        double x = player.getX() + Math.sin(spawnAngle) * radius + (random.nextFloat() - 0.5) * lateralJitter;
+        double y = player.getEyeY() + (random.nextFloat() - 0.5) * heightJitter;
+        double z = player.getZ() + Math.cos(spawnAngle) * radius + (random.nextFloat() - 0.5) * lateralJitter;
 
-        if (OUTDOORS_ONLY && !level.canSeeSky(BlockPos.containing(x, y, z))) {
+        if (AeroWeatherClientConfig.OUTDOORS_ONLY.get() && !level.canSeeSky(BlockPos.containing(x, y, z))) {
             return;
         }
 
         // Travel direction: wind blows FROM directionDeg TOWARD the opposite bearing,
         // with a small per-particle deviation so the drift doesn't look perfectly uniform.
-        float jitteredDirectionDeg = directionDeg + (random.nextFloat() * 2.0F - 1.0F) * DIRECTION_JITTER_DEG;
+        float directionJitterDeg = (float) AeroWeatherClientConfig.DIRECTION_JITTER_DEG.getAsDouble();
+        float jitteredDirectionDeg = directionDeg + (random.nextFloat() * 2.0F - 1.0F) * directionJitterDeg;
         double bearingRad = Math.toRadians(jitteredDirectionDeg);
         double travelX = -Math.sin(bearingRad);
         double travelZ = Math.cos(bearingRad);
 
-        float speed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * (strength / 100.0F);
+        float minSpeed = (float) AeroWeatherClientConfig.MIN_SPEED.getAsDouble();
+        float maxSpeed = (float) AeroWeatherClientConfig.MAX_SPEED.getAsDouble();
+        float speed = minSpeed + (maxSpeed - minSpeed) * (strength / 100.0F);
         double xd = travelX * speed;
         double zd = travelZ * speed;
 

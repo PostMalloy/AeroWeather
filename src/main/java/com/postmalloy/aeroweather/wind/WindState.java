@@ -1,5 +1,7 @@
 package com.postmalloy.aeroweather.wind;
 
+import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
+
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.RandomSource;
 
@@ -10,32 +12,14 @@ import net.minecraft.util.RandomSource;
  * /aeroweather command. See CLAUDE.md's "Wind system design" section for
  * the model this implements.
  *
- * The simulation constants below are hardcoded for now; they become
- * configurable in a later milestone (see CLAUDE.md roadmap, M5).
+ * Simulation tuning comes from {@link AeroWeatherCommonConfig}, read
+ * fresh each simulation step (once/second) rather than cached, since
+ * NeoForge config values can change live via the in-game config screen
+ * or file reload.
  */
 public final class WindState {
     private static final float MIN_STRENGTH = 0.0f;
     private static final float MAX_STRENGTH = 100.0f;
-
-    // Natural drift: how far a newly rolled target may differ from the
-    // current base value, how often it's re-rolled, and how quickly the
-    // base value eases toward that target each simulation step.
-    private static final float DRIFT_MAX_DIRECTION_DELTA = 60.0f;
-    private static final float DRIFT_MAX_STRENGTH_DELTA = 30.0f;
-    private static final int DRIFT_RETARGET_MIN_STEPS = 15; // ~15s at 1 step/s
-    private static final int DRIFT_RETARGET_MAX_STEPS = 45; // ~45s
-    private static final float DRIFT_LERP_FACTOR = 0.08f;
-
-    // Gusts: short additive strength spikes that ramp linearly back to 0.
-    private static final float GUST_CHANCE_PER_STEP = 0.02f;
-    private static final float GUST_MIN_MAGNITUDE = 10.0f;
-    private static final float GUST_MAX_MAGNITUDE = 25.0f;
-    private static final int GUST_DURATION_STEPS = 4; // ~4s
-
-    // Weather coupling.
-    private static final float RAIN_BOOST = 15.0f;
-    private static final float THUNDER_BOOST = 35.0f;
-    private static final float WEATHER_EASE_FACTOR = 0.1f;
 
     private float baseDirectionDeg;
     private float targetDirectionDeg;
@@ -71,29 +55,41 @@ public final class WindState {
     }
 
     private void tickDrift(RandomSource random) {
+        float maxDirectionDelta = (float) AeroWeatherCommonConfig.DRIFT_MAX_DIRECTION_DELTA_DEG.getAsDouble();
+        float maxStrengthDelta = (float) AeroWeatherCommonConfig.DRIFT_MAX_STRENGTH_DELTA.getAsDouble();
+        float lerpFactor = (float) AeroWeatherCommonConfig.DRIFT_LERP_FACTOR.getAsDouble();
+
         if (stepsUntilRetarget <= 0) {
-            targetDirectionDeg = WindDirection.normalizeDegrees(baseDirectionDeg + randomRange(random, -DRIFT_MAX_DIRECTION_DELTA, DRIFT_MAX_DIRECTION_DELTA));
-            targetStrength = clampStrength(baseStrength + randomRange(random, -DRIFT_MAX_STRENGTH_DELTA, DRIFT_MAX_STRENGTH_DELTA));
-            stepsUntilRetarget = random.nextIntBetweenInclusive(DRIFT_RETARGET_MIN_STEPS, DRIFT_RETARGET_MAX_STEPS);
+            targetDirectionDeg = WindDirection.normalizeDegrees(baseDirectionDeg + randomRange(random, -maxDirectionDelta, maxDirectionDelta));
+            targetStrength = clampStrength(baseStrength + randomRange(random, -maxStrengthDelta, maxStrengthDelta));
+            // Config is expressed in seconds; one simulation step is one second (WindSimulator's 20-tick cadence).
+            int minSteps = AeroWeatherCommonConfig.DRIFT_RETARGET_MIN_SECONDS.get();
+            int maxSteps = AeroWeatherCommonConfig.DRIFT_RETARGET_MAX_SECONDS.get();
+            stepsUntilRetarget = random.nextIntBetweenInclusive(Math.min(minSteps, maxSteps), Math.max(minSteps, maxSteps));
         } else {
             stepsUntilRetarget--;
         }
-        baseDirectionDeg = lerpAngle(baseDirectionDeg, targetDirectionDeg, DRIFT_LERP_FACTOR);
-        baseStrength = lerp(baseStrength, targetStrength, DRIFT_LERP_FACTOR);
+        baseDirectionDeg = lerpAngle(baseDirectionDeg, targetDirectionDeg, lerpFactor);
+        baseStrength = lerp(baseStrength, targetStrength, lerpFactor);
     }
 
     private void tickGust(RandomSource random) {
         if (gustStepsRemaining > 0) {
             gustStepsRemaining--;
-        } else if (random.nextFloat() < GUST_CHANCE_PER_STEP) {
-            gustMagnitude = randomRange(random, GUST_MIN_MAGNITUDE, GUST_MAX_MAGNITUDE);
-            gustStepsRemaining = GUST_DURATION_STEPS;
+        } else if (random.nextFloat() < AeroWeatherCommonConfig.GUST_CHANCE_PER_SECOND.getAsDouble()) {
+            float minMagnitude = (float) AeroWeatherCommonConfig.GUST_MIN_MAGNITUDE.getAsDouble();
+            float maxMagnitude = (float) AeroWeatherCommonConfig.GUST_MAX_MAGNITUDE.getAsDouble();
+            gustMagnitude = randomRange(random, minMagnitude, maxMagnitude);
+            gustStepsRemaining = AeroWeatherCommonConfig.GUST_DURATION_SECONDS.get();
         }
     }
 
     private void tickWeatherBoost(boolean raining, boolean thundering) {
-        float target = thundering ? THUNDER_BOOST : raining ? RAIN_BOOST : 0.0f;
-        weatherBoost = lerp(weatherBoost, target, WEATHER_EASE_FACTOR);
+        float rainBoost = (float) AeroWeatherCommonConfig.RAIN_BOOST.getAsDouble();
+        float thunderBoost = (float) AeroWeatherCommonConfig.THUNDER_BOOST.getAsDouble();
+        float easeFactor = (float) AeroWeatherCommonConfig.WEATHER_EASE_FACTOR.getAsDouble();
+        float target = thundering ? thunderBoost : raining ? rainBoost : 0.0f;
+        weatherBoost = lerp(weatherBoost, target, easeFactor);
     }
 
     private void recomputeEffective() {
@@ -102,7 +98,8 @@ public final class WindState {
             strength = overrideStrength;
         } else {
             directionDeg = baseDirectionDeg;
-            float gustStrength = gustStepsRemaining == 0 ? 0.0f : gustMagnitude * (gustStepsRemaining / (float) GUST_DURATION_STEPS);
+            int gustDurationSteps = Math.max(1, AeroWeatherCommonConfig.GUST_DURATION_SECONDS.get());
+            float gustStrength = gustStepsRemaining == 0 ? 0.0f : gustMagnitude * (gustStepsRemaining / (float) gustDurationSteps);
             strength = clampStrength(baseStrength + gustStrength + weatherBoost);
         }
     }

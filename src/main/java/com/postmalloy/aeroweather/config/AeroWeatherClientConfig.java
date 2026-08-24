@@ -1,0 +1,66 @@
+package com.postmalloy.aeroweather.config;
+
+import net.neoforged.neoforge.common.ModConfigSpec;
+
+/**
+ * Client-only wind particle tunables. Loaded as {@code ModConfig.Type.CLIENT},
+ * so it's per-player, not shipped with the world/server. See
+ * {@link com.postmalloy.aeroweather.client.particle.WindParticleSpawner}
+ * for how these are consumed — this class only defines the spec.
+ */
+public final class AeroWeatherClientConfig {
+    public static final ModConfigSpec SPEC;
+
+    public static final ModConfigSpec.BooleanValue PARTICLES_ENABLED;
+    public static final ModConfigSpec.DoubleValue MIN_RADIUS;
+    public static final ModConfigSpec.DoubleValue MAX_RADIUS;
+    public static final ModConfigSpec.DoubleValue LATERAL_JITTER;
+    public static final ModConfigSpec.DoubleValue HEIGHT_JITTER;
+    public static final ModConfigSpec.DoubleValue MAX_PARTICLES_PER_TICK;
+    public static final ModConfigSpec.DoubleValue MIN_SPEED;
+    public static final ModConfigSpec.DoubleValue MAX_SPEED;
+    public static final ModConfigSpec.DoubleValue DIRECTION_JITTER_DEG;
+    public static final ModConfigSpec.BooleanValue OUTDOORS_ONLY;
+
+    static {
+        ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
+
+        builder.comment("Wind direction particle rendering.").push("particles");
+        PARTICLES_ENABLED = builder
+                .comment("Whether to spawn wind direction particles at all.")
+                .define("enabled", true);
+        MIN_RADIUS = builder
+                .comment("Minimum spawn distance from the player, in blocks.")
+                .defineInRange("minRadius", 8.0, 0.0, 128.0);
+        MAX_RADIUS = builder
+                .comment("Maximum spawn distance from the player, in blocks.")
+                .defineInRange("maxRadius", 20.0, 0.0, 128.0);
+        LATERAL_JITTER = builder
+                .comment("Random horizontal offset applied to each spawn position, in blocks.")
+                .defineInRange("lateralJitter", 4.0, 0.0, 32.0);
+        HEIGHT_JITTER = builder
+                .comment("Random vertical offset applied to each spawn position around eye height, in blocks.")
+                .defineInRange("heightJitter", 3.0, 0.0, 32.0);
+        MAX_PARTICLES_PER_TICK = builder
+                .comment("Particles spawned per client tick at strength 100 (scales linearly down to 0 at strength 0).")
+                .defineInRange("maxParticlesPerTick", 1.0, 0.0, 20.0);
+        MIN_SPEED = builder
+                .comment("Particle drift speed, in blocks/tick, at strength just above 0.")
+                .defineInRange("minSpeed", 0.05, 0.0, 5.0);
+        MAX_SPEED = builder
+                .comment("Particle drift speed, in blocks/tick, at strength 100.")
+                .defineInRange("maxSpeed", 0.4, 0.0, 5.0);
+        DIRECTION_JITTER_DEG = builder
+                .comment("Random per-particle deviation from the wind's exact direction, in degrees.")
+                .defineInRange("directionJitterDegrees", 5.0, 0.0, 180.0);
+        OUTDOORS_ONLY = builder
+                .comment("Whether particles only spawn where they can see the sky (skips spawns inside/under terrain and buildings).")
+                .define("outdoorsOnly", true);
+        builder.pop();
+
+        SPEC = builder.build();
+    }
+
+    private AeroWeatherClientConfig() {
+    }
+}
