@@ -5,6 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 
 import com.postmalloy.aeroweather.AeroWeather;
+import com.postmalloy.aeroweather.network.WindSync;
 import com.postmalloy.aeroweather.wind.WindDirection;
 import com.postmalloy.aeroweather.wind.WindOverride;
 import com.postmalloy.aeroweather.wind.WindSavedData;
@@ -53,6 +54,7 @@ public final class AeroWeatherCommand {
         WindSavedData savedData = WindSavedData.get(level);
         savedData.wind().applyOverride(new WindOverride(directionDeg, strength));
         savedData.setDirty();
+        WindSync.forceSync(level, savedData);
 
         WindDirection nearest = WindDirection.nearest(directionDeg);
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.set", nearest.displayName(), strength), true);
@@ -65,6 +67,7 @@ public final class AeroWeatherCommand {
         WindSavedData savedData = WindSavedData.get(level);
         savedData.wind().clearOverride();
         savedData.setDirty();
+        WindSync.forceSync(level, savedData);
 
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.reset"), true);
         return 1;
