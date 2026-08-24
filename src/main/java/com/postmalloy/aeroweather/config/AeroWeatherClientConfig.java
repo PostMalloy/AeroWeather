@@ -22,10 +22,6 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue DIRECTION_JITTER_DEG;
     public static final ModConfigSpec.BooleanValue OUTDOORS_ONLY;
 
-    public static final ModConfigSpec.DoubleValue HEIGHT_REFERENCE_ABOVE_SEA_LEVEL;
-    public static final ModConfigSpec.DoubleValue HEIGHT_EXPONENT;
-    public static final ModConfigSpec.DoubleValue HEIGHT_MAX_MULTIPLIER;
-
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -60,22 +56,6 @@ public final class AeroWeatherClientConfig {
         OUTDOORS_ONLY = builder
                 .comment("Whether particles only spawn where they can see the sky (skips spawns inside/under terrain and buildings).")
                 .define("outdoorsOnly", true);
-        builder.pop();
-
-        builder.comment(
-                "How wind strength scales with elevation, approximating the real-world",
-                "wind profile power law (wind speed increasing with height above the",
-                "surface): 0 at or below sea level, ramping up above it."
-        ).push("height");
-        HEIGHT_REFERENCE_ABOVE_SEA_LEVEL = builder
-                .comment("Blocks above sea level where the height multiplier reaches 1.0 (unmodified base strength).")
-                .defineInRange("referenceAboveSeaLevel", 100.0, 1.0, 4064.0);
-        HEIGHT_EXPONENT = builder
-                .comment("Power-law exponent controlling how quickly the multiplier ramps up with height.")
-                .defineInRange("exponent", 0.3, 0.0, 5.0);
-        HEIGHT_MAX_MULTIPLIER = builder
-                .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
-                .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
         builder.pop();
 
         SPEC = builder.build();

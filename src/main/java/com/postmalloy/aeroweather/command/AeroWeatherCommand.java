@@ -5,8 +5,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 
 import com.postmalloy.aeroweather.AeroWeather;
+import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.WindSync;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindOverride;
 import com.postmalloy.aeroweather.wind.WindSavedData;
 import com.postmalloy.aeroweather.wind.WindState;
@@ -81,8 +83,18 @@ public final class AeroWeatherCommand {
         String sourceKey = wind.isOverridden() ? "commands.aeroweather.wind.info.overridden" : "commands.aeroweather.wind.info.natural";
         int strengthRounded = Math.round(wind.strength());
 
+        // getPosition() works for any command source (player, console, command block), not just players,
+        // so this degrades gracefully rather than requiring the source to be a ServerPlayer.
+        double y = context.getSource().getPosition().y;
+        float adjustedStrength = WindHeightScaling.scale(wind.strength(), y, level.getSeaLevel(),
+                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+        int adjustedStrengthRounded = Math.round(adjustedStrength);
+
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.info",
-                nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, Component.translatable(sourceKey)), false);
+                nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, Component.translatable(sourceKey),
+                adjustedStrengthRounded), false);
         return strengthRounded;
     }
 }

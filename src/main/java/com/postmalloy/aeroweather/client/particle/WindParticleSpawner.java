@@ -3,6 +3,7 @@ package com.postmalloy.aeroweather.client.particle;
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
+import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 
@@ -28,7 +29,11 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * or below sea level, ramping up above it - computed once per tick from
  * the player's own Y rather than per particle, since the small amount of
  * per-particle height jitter isn't meaningful against the scale this
- * curve operates over. Tuning comes from {@link AeroWeatherClientConfig}.
+ * curve operates over. Particle tuning comes from
+ * {@link AeroWeatherClientConfig}; the height-scaling curve itself lives
+ * in the common config instead (it's server-authoritative - see
+ * {@code AeroWeatherCommand}'s "wind info" output, which reports the
+ * same elevation-adjusted value).
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
@@ -61,9 +66,9 @@ public final class WindParticleSpawner {
         }
 
         float strength = WindHeightScaling.scale(baseStrength, player.getY(), level.getSeaLevel(),
-                AeroWeatherClientConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherClientConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherClientConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
         if (strength <= 0.0F) {
             return;
         }

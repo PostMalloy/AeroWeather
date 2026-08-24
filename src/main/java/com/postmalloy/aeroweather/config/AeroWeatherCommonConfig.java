@@ -32,6 +32,10 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue SYNC_STRENGTH_THRESHOLD;
     public static final ModConfigSpec.IntValue SYNC_HEARTBEAT_SECONDS;
 
+    public static final ModConfigSpec.DoubleValue HEIGHT_REFERENCE_ABOVE_SEA_LEVEL;
+    public static final ModConfigSpec.DoubleValue HEIGHT_EXPONENT;
+    public static final ModConfigSpec.DoubleValue HEIGHT_MAX_MULTIPLIER;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -90,6 +94,24 @@ public final class AeroWeatherCommonConfig {
         SYNC_HEARTBEAT_SECONDS = builder
                 .comment("Maximum seconds between syncs even if nothing changed enough to trigger one on its own.")
                 .defineInRange("heartbeatSeconds", 5, 1, 600);
+        builder.pop();
+
+        builder.comment(
+                "How wind strength scales with elevation, approximating the real-world",
+                "wind profile power law (wind speed increasing with height above the",
+                "surface): 0 at or below sea level, ramping up above it. Server-authoritative",
+                "since /aeroweather wind info reports the elevation-adjusted value, and a",
+                "future milestone will use it for actual force applied to contraptions."
+        ).push("height");
+        HEIGHT_REFERENCE_ABOVE_SEA_LEVEL = builder
+                .comment("Blocks above sea level where the height multiplier reaches 1.0 (unmodified base strength).")
+                .defineInRange("referenceAboveSeaLevel", 100.0, 1.0, 4064.0);
+        HEIGHT_EXPONENT = builder
+                .comment("Power-law exponent controlling how quickly the multiplier ramps up with height.")
+                .defineInRange("exponent", 0.3, 0.0, 5.0);
+        HEIGHT_MAX_MULTIPLIER = builder
+                .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
+                .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
         builder.pop();
 
         SPEC = builder.build();

@@ -3,7 +3,7 @@
 
   "commands.aeroweather.wind.set": "Wind set to blow from %s at strength %s",
   "commands.aeroweather.wind.reset": "Wind reset to natural simulation",
-  "commands.aeroweather.wind.info": "Wind blowing from %s (%s°) at strength %s/100 (%s)",
+  "commands.aeroweather.wind.info": "Wind blowing from %s (%s°) at strength %s/100 (%s), %s/100 adjusted for your elevation",
   "commands.aeroweather.wind.info.overridden": "operator override",
   "commands.aeroweather.wind.info.natural": "natural",
 
