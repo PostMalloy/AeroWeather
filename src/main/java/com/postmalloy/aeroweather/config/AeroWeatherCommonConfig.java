@@ -27,6 +27,9 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue RAIN_BOOST;
     public static final ModConfigSpec.DoubleValue THUNDER_BOOST;
     public static final ModConfigSpec.DoubleValue WEATHER_EASE_FACTOR;
+    public static final ModConfigSpec.DoubleValue STRENGTH_CAP_CLEAR;
+    public static final ModConfigSpec.DoubleValue STRENGTH_CAP_RAIN;
+    public static final ModConfigSpec.DoubleValue STRENGTH_CAP_THUNDER;
 
     public static final ModConfigSpec.DoubleValue SYNC_DIRECTION_THRESHOLD_DEG;
     public static final ModConfigSpec.DoubleValue SYNC_STRENGTH_THRESHOLD;
@@ -82,6 +85,15 @@ public final class AeroWeatherCommonConfig {
         WEATHER_EASE_FACTOR = builder
                 .comment("Fraction of the remaining distance to the target weather boost covered each simulation step (higher = faster response to weather changes).")
                 .defineInRange("easeFactor", 0.1, 0.001, 1.0);
+        STRENGTH_CAP_CLEAR = builder
+                .comment("Maximum non-height-adjusted wind strength while it's neither raining nor thundering.")
+                .defineInRange("strengthCapClear", 50.0, 0.0, 100.0);
+        STRENGTH_CAP_RAIN = builder
+                .comment("Maximum non-height-adjusted wind strength while raining (and not thundering).")
+                .defineInRange("strengthCapRain", 75.0, 0.0, 100.0);
+        STRENGTH_CAP_THUNDER = builder
+                .comment("Maximum non-height-adjusted wind strength while thundering.")
+                .defineInRange("strengthCapThunder", 100.0, 0.0, 100.0);
         builder.pop();
 
         builder.comment("When to broadcast wind updates to clients.").push("sync");

@@ -11,7 +11,16 @@ import net.minecraft.util.RandomSource;
  * occasionally, boosted by rain/thunderstorms, and overridable via the
  * /aeroweather command. See CLAUDE.md's "Wind system design" section for
  * the model this implements.
- *
+ * <p>
+ * Natural (non-overridden) strength is additionally capped per weather
+ * tier - clear/rain/thunder each have their own ceiling, thunderstorms
+ * highest - applied after drift/gust/weatherBoost are summed, so it acts
+ * as an absolute ceiling regardless of what's contributing to the total.
+ * This is separate from (and layered on top of) the elevation-based
+ * scaling in {@link WindHeightScaling}, which is applied downstream by
+ * whatever samples wind at a specific position - the cap here bounds the
+ * base 0-100 value, not the elevation-adjusted one.
+ * <p>
  * Simulation tuning comes from {@link AeroWeatherCommonConfig}, read
  * fresh each simulation step (once/second) rather than cached, since
  * NeoForge config values can change live via the in-game config screen
@@ -31,6 +40,8 @@ public final class WindState {
     private int gustStepsRemaining;
 
     private float weatherBoost;
+    private boolean raining;
+    private boolean thundering;
 
     private boolean overridden;
     private float overrideDirectionDeg;
@@ -46,6 +57,8 @@ public final class WindState {
 
     /** Advances the simulation by one step (called roughly once per second). */
     public void tick(RandomSource random, boolean raining, boolean thundering) {
+        this.raining = raining;
+        this.thundering = thundering;
         if (!overridden) {
             tickDrift(random);
             tickGust(random);
@@ -100,8 +113,19 @@ public final class WindState {
             directionDeg = baseDirectionDeg;
             int gustDurationSteps = Math.max(1, AeroWeatherCommonConfig.GUST_DURATION_SECONDS.get());
             float gustStrength = gustStepsRemaining == 0 ? 0.0f : gustMagnitude * (gustStepsRemaining / (float) gustDurationSteps);
-            strength = clampStrength(baseStrength + gustStrength + weatherBoost);
+            strength = Math.min(clampStrength(baseStrength + gustStrength + weatherBoost), currentStrengthCap());
         }
+    }
+
+    /** The weather-tier ceiling on natural (non-overridden, pre-elevation-adjustment) wind strength. */
+    private float currentStrengthCap() {
+        if (thundering) {
+            return (float) AeroWeatherCommonConfig.STRENGTH_CAP_THUNDER.getAsDouble();
+        }
+        if (raining) {
+            return (float) AeroWeatherCommonConfig.STRENGTH_CAP_RAIN.getAsDouble();
+        }
+        return (float) AeroWeatherCommonConfig.STRENGTH_CAP_CLEAR.getAsDouble();
     }
 
     /** Pins wind to an exact direction/strength and freezes natural drift until {@link #clearOverride()}. */
