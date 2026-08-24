@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
+import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
+
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -22,5 +24,8 @@ public class AeroWeather {
     public AeroWeather(IEventBus modEventBus, ModContainer modContainer) {
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+        // Register the custom /aeroweather command's Brigadier argument types
+        AeroWeatherCommandArgumentTypes.COMMAND_ARGUMENT_TYPES.register(modEventBus);
     }
 }
