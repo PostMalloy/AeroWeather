@@ -4,6 +4,7 @@ import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
+import com.postmalloy.aeroweather.wind.WindHeightScaling;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -22,8 +23,12 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * (not just upwind) and drift in the wind's travel direction regardless
  * of where they started, so the ones that happen to spawn downwind
  * simply have less visible travel time before expiring. Both spawn rate
- * and drift speed scale with wind strength. Tuning comes from
- * {@link AeroWeatherClientConfig}.
+ * and drift speed scale with wind strength. Strength is additionally
+ * scaled by the player's elevation via {@link WindHeightScaling} - 0 at
+ * or below sea level, ramping up above it - computed once per tick from
+ * the player's own Y rather than per particle, since the small amount of
+ * per-particle height jitter isn't meaningful against the scale this
+ * curve operates over. Tuning comes from {@link AeroWeatherClientConfig}.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
@@ -50,7 +55,15 @@ public final class WindParticleSpawner {
             return;
         }
 
-        float strength = ClientWindState.strength();
+        float baseStrength = ClientWindState.strength();
+        if (baseStrength <= 0.0F) {
+            return;
+        }
+
+        float strength = WindHeightScaling.scale(baseStrength, player.getY(), level.getSeaLevel(),
+                AeroWeatherClientConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
+                AeroWeatherClientConfig.HEIGHT_EXPONENT.getAsDouble(),
+                AeroWeatherClientConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
         if (strength <= 0.0F) {
             return;
         }
