@@ -61,6 +61,7 @@ wind/
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
   WindOverride.java                   operator-set override value type
+  WindHeightScaling.java               pure function: base strength -> elevation-scaled strength (power-law, 0 at/below sea level)
 
 network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
@@ -169,12 +170,25 @@ tested in open sky at altitude.
   (plain random-walk-with-lerp — no noise library needed for v1).
 - Gusts: short probabilistic additive spikes that decay, layered on top
   of the drift value.
-- Wind increases with height above ground level: a power-law relationship
-  on height dictates intensity. Not yet implemented — `WindState` is
-  still purely per-dimension with no positional input; this becomes
-  relevant once something samples wind at a specific point (M4 particles,
-  M7 force application). Exact exponent/reference height are unspecified
-  — see open questions.
+- Wind intensity scales with elevation above sea level via
+  `wind/WindHeightScaling.java`, approximating the real-world wind
+  profile power law: 0 at or below sea level, reaching the unmodified
+  base strength at a configurable reference height above sea level
+  (`AeroWeatherClientConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default
+  100 blocks), and growing further above that up to a configurable cap
+  (`HEIGHT_MAX_MULTIPLIER`, default 3x). Kept as a standalone pure
+  function (not baked into `WindState`, which stays purely per-dimension
+  with no positional input) since a server-side consumer is expected
+  once M7 (Aeronautics force application) needs to sample wind at a
+  contraption's position too. Currently only wired into
+  `WindParticleSpawner` (client-side), computed once per tick from the
+  player's Y — the curve parameters live in `AeroWeatherClientConfig`,
+  not the common config, because this only affects client rendering
+  right now and NeoForge's common config isn't automatically synced from
+  server to client. Verified numerically against a live server+client:
+  teleporting through a range of heights and logging the computed values
+  matched the formula exactly at every sampled point (0 below/at sea
+  level, exactly the base strength at the reference height, etc.).
 - `weatherBoost` eases (doesn't snap) toward 0 / rain-boost /
   thunder-boost based on `level.isRaining()`/`isThundering()` so weather
   starting/stopping never jump-cuts wind.
@@ -315,10 +329,13 @@ Resolve these before relying on them — don't let assumptions calcify:
   `PhysicsPipeline.applyImpulse()` directly (needs jar inspection, M6).
 - ModDevGradle `2.0.144`'s exact `jarJar` DSL for embedding Sable
   Companion.
-- Exact NeoForge 1.21.1 method signatures for `SavedData.Factory`
-  (post-1.20.5 takes a `HolderLookup.Provider`) and the `PacketDistributor`
-  static helper for "send to all players in a dimension."
-- Height-based wind scaling: exponent, reference height, and minimum/
-  maximum multiplier for the power-law relationship between altitude and
-  wind intensity (see "Wind system design" above) — needed before M4/M7
-  can sample wind at a specific position.
+
+Resolved and confirmed working via live testing (kept here as a record,
+not because they're still open): `SavedData.Factory`'s deserializer
+takes `(CompoundTag, HolderLookup.Provider)`, obtained via
+`level.getDataStorage().computeIfAbsent(factory, name)`;
+`PacketDistributor.sendToPlayer(player, payload)` and
+`.sendToPlayersInDimension(level, payload)` for sync; and the
+height-based wind scaling curve (exponent 0.3, 100-block reference
+height, 3x max multiplier — see "Wind system design" above and
+`AeroWeatherClientConfig`).
