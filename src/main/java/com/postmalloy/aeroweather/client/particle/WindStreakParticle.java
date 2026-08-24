@@ -1,9 +1,12 @@
 package com.postmalloy.aeroweather.client.particle;
 
+import org.joml.Quaternionf;
+
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
 import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
 import net.minecraft.core.particles.SimpleParticleType;
@@ -17,6 +20,14 @@ import net.neoforged.api.distmarker.OnlyIn;
  * lifetime — this deliberately does NOT use the vanilla
  * {@link TextureSheetParticle#setSpriteFromAge} behavior, which spreads
  * all frames evenly across the lifetime once with no looping.
+ * <p>
+ * Orientation is fixed in world space to the particle's travel direction
+ * (a vertical card containing the travel vector, normal perpendicular to
+ * it) rather than the default camera-billboard behavior — a billboard
+ * always presents the same face to the camera regardless of which way
+ * the particle is actually moving, which defeats the point of a
+ * directional wind indicator. Computed once at spawn from the velocity
+ * vector, not re-derived from the camera each frame.
  */
 @OnlyIn(Dist.CLIENT)
 public class WindStreakParticle extends TextureSheetParticle {
@@ -24,16 +35,35 @@ public class WindStreakParticle extends TextureSheetParticle {
     private static final int TICKS_PER_FRAME = 4; // 200ms at 20 ticks/sec
 
     private final SpriteSet sprites;
+    private final Quaternionf orientation;
 
     private WindStreakParticle(ClientLevel level, double x, double y, double z, double xSpeed, double ySpeed, double zSpeed, SpriteSet sprites) {
         super(level, x, y, z, xSpeed, ySpeed, zSpeed);
         this.sprites = sprites;
+        this.orientation = orientationForTravelDirection(xSpeed, zSpeed);
         this.hasPhysics = false;
         this.gravity = 0.0F;
         this.friction = 1.0F;
         this.quadSize = 0.4F + this.random.nextFloat() * 0.3F;
         this.lifetime = 24 + this.random.nextInt(17); // 24-40 ticks
         updateSprite();
+    }
+
+    private static Quaternionf orientationForTravelDirection(double xSpeed, double zSpeed) {
+        double lengthSq = xSpeed * xSpeed + zSpeed * zSpeed;
+        if (lengthSq < 1.0E-6) {
+            return new Quaternionf();
+        }
+        double length = Math.sqrt(lengthSq);
+        float travelX = (float) (xSpeed / length);
+        float travelZ = (float) (zSpeed / length);
+        float yaw = (float) Math.atan2(-travelZ, travelX);
+        return new Quaternionf().rotationY(yaw);
+    }
+
+    @Override
+    public SingleQuadParticle.FacingCameraMode getFacingCameraMode() {
+        return (quaternion, camera, partialTick) -> quaternion.set(this.orientation);
     }
 
     @Override
