@@ -113,20 +113,48 @@ without a native by-index accessor.
 
 Particles spawn at a random angle around the player (not just upwind —
 they drift toward the travel direction regardless of spawn angle, so
-this only affects ambience, not readability) and both spawn rate and
-drift speed scale with wind strength. Orientation is NOT the default
-camera-billboard (`SingleQuadParticle`'s `LOOKAT_XYZ`, which always
-faces the camera regardless of travel direction — a billboard looks
-identical from every angle no matter which way it's actually moving,
-defeating the point of a directional texture); `WindStreakParticle`
-overrides `getFacingCameraMode()` to return a fixed world-space
-orientation computed once from the velocity vector at spawn (a vertical
-card containing the travel vector, normal perpendicular to it). Verified
-empirically, not just derived: with wind traveling perpendicular to the
-camera's view axis, particles show full-width shapes; parallel to the
-view axis, the same particles show as thin edge-on slivers — that
-apparent-width change with viewing angle is only possible with a real
-world-space orientation, not a billboard.
+this only affects ambience, not readability); a per-particle +/-5 degree
+direction jitter keeps the drift from looking perfectly uniform. Both
+spawn rate and drift speed scale with wind strength (0.05-0.4
+blocks/tick); vertical speed is clamped to exactly 0 for now.
+`WindStreakParticle` bypasses `TextureSheetParticle`'s 7-arg constructor
+deliberately — it chains to vanilla `Particle`'s randomizing constructor,
+which jitters velocity by up to +/-0.4 per axis and unconditionally adds
++0.1 to `yd` rather than passing given velocity through untouched — and
+sets `xd`/`yd`/`zd` directly instead.
+
+Orientation is NOT the default camera-billboard (`SingleQuadParticle`'s
+`LOOKAT_XYZ`, which always faces the camera regardless of travel
+direction — a billboard looks identical from every angle no matter which
+way it's actually moving, defeating the point of a directional texture);
+`WindStreakParticle` overrides `getFacingCameraMode()` to return a fixed
+world-space orientation computed once from the velocity vector at spawn
+(a vertical card containing the travel vector, normal perpendicular to
+it) and never re-derived from the camera. Two things layer on top of
+that fixed orientation:
+- **Double-sided rendering**: `render()` is overridden to draw the quad
+  twice, once with reversed winding (a 180-degree yaw flip), since
+  `PARTICLE_SHEET_TRANSLUCENT` never sets an explicit GL cull state and
+  a fixed (non-billboard) card can plausibly end up back-face-out from a
+  given angle.
+- **Left/right texture mirroring**: since every particle from the same
+  wind shares one fixed orientation, a particle to the player's left and
+  its mirror counterpart to the right would otherwise show identical
+  texture handedness instead of reading as a mirrored pair. "Left" is
+  relative to facing upwind (the reference direction the orientation
+  scheme is built around), computed once at spawn from a cross-product
+  sign, and applied by swapping `getU0()`/`getU1()`.
+
+Verified empirically, not just derived, across several rounds of live
+testing (screenshots, F3 debug coordinates, RCON): direction math is
+correct at both cardinal and diagonal wind angles; wind traveling
+perpendicular to the camera's view axis shows full-width shapes,
+parallel shows thin edge-on slivers (only possible with a genuine
+world-space orientation, not a billboard); and a reported "particles
+only spawn on one side" issue was root-caused to `canSeeSky` correctly
+filtering spawns near terrain, not a spawn or orientation bug — raw and
+post-filter spawn-angle distributions matched exactly (794/794) once
+tested in open sky at altitude.
 
 ## Wind system design
 
