@@ -97,17 +97,21 @@ Create Aeronautics installed, wind physically pushes flying contraptions.
 # Create is Sable's own optional dependency and is declared here too since it's present
 # in any real Aeronautics setup. No entry for "aeronautics" itself (not linked against)
 # or "sablecompanion" (embedded via jarJar, not an optional mod install).
+# versionRange="" was tried first (no minimum intended) but NeoForge parses an empty
+# string as an impossible range that matches no installed version at all, not as
+# "unconstrained" - crashed loading with "Mod aeroweather only supports create/sable"
+# even with both mods present. "[0,)" is the correct way to say "any version".
 [[dependencies.${mod_id}]]
     modId="sable"
     type="optional"
-    versionRange=""
+    versionRange="[0,)"
     ordering="AFTER"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
     modId="create"
     type="optional"
-    versionRange=""
+    versionRange="[0,)"
     ordering="AFTER"
     side="BOTH"
 

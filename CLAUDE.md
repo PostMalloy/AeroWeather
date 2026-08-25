@@ -313,7 +313,12 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   AeroWeather doesn't link against it, see "External references") as
   `type="optional"`, `ordering="AFTER"` dependencies using their
   confirmed real modIds (`create`, `sable`). **Wired as of M7** — no
-  entry for Sable Companion.
+  entry for Sable Companion. **Gotcha found via live testing**:
+  `versionRange=""` (intending "no minimum") is NOT parsed by NeoForge
+  as unconstrained — it's an impossible range that rejects every
+  installed version, crashing load with "Mod aeroweather only supports
+  create/sable" even with both mods present and correctly loaded.
+  `versionRange="[0,)"` is the correct way to say "any version".
 - Because Sable's internal physics API carries no third-party stability
   guarantee, wrap the actual force-application call defensively
   (try/catch, degrade to "log once + disable" rather than crash).
