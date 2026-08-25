@@ -39,6 +39,9 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue HEIGHT_EXPONENT;
     public static final ModConfigSpec.DoubleValue HEIGHT_MAX_MULTIPLIER;
 
+    public static final ModConfigSpec.DoubleValue AERONAUTICS_PRESSURE_COEFFICIENT;
+    public static final ModConfigSpec.DoubleValue AERONAUTICS_MAX_FORCE;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -112,8 +115,8 @@ public final class AeroWeatherCommonConfig {
                 "How wind strength scales with elevation, approximating the real-world",
                 "wind profile power law (wind speed increasing with height above the",
                 "surface): 0 at or below sea level, ramping up above it. Server-authoritative",
-                "since /aeroweather wind info reports the elevation-adjusted value, and a",
-                "future milestone will use it for actual force applied to contraptions."
+                "since /aeroweather wind info reports the elevation-adjusted value, and the",
+                "aeronautics wind force below samples it at a contraption's own altitude."
         ).push("height");
         HEIGHT_REFERENCE_ABOVE_SEA_LEVEL = builder
                 .comment("Blocks above sea level where the height multiplier reaches 1.0 (unmodified base strength).")
@@ -124,6 +127,20 @@ public final class AeroWeatherCommonConfig {
         HEIGHT_MAX_MULTIPLIER = builder
                 .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
                 .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
+        builder.pop();
+
+        builder.comment(
+                "Tuning for the wind force applied to Create Aeronautics / Sable contraptions (M7).",
+                "Force = pressureCoefficient * sectionalArea * windSpeed^2 * liftRatio, applied at",
+                "the contraption's center of mass. Requires Sable to be installed; has no effect",
+                "otherwise."
+        ).push("aeronautics");
+        AERONAUTICS_PRESSURE_COEFFICIENT = builder
+                .comment("Scales sectional area * elevation-adjusted wind strength^2 into a force magnitude.")
+                .defineInRange("pressureCoefficient", 0.01, 0.0, 1000.0);
+        AERONAUTICS_MAX_FORCE = builder
+                .comment("Safety clamp on the computed force magnitude, regardless of contraption size or wind strength.")
+                .defineInRange("maxForce", 5000.0, 0.0, 1000000.0);
         builder.pop();
 
         SPEC = builder.build();

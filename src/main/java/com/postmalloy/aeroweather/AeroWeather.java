@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
+import com.postmalloy.aeroweather.integration.aeronautics.AeronauticsIntegration;
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 
@@ -32,5 +33,8 @@ public class AeroWeather {
 
         // Register wind particle types
         AeroWeatherParticles.PARTICLE_TYPES.register(modEventBus);
+
+        // Start the Aeronautics wind force integration (a no-op unless Sable is installed)
+        AeronauticsIntegration.get().start();
     }
 }

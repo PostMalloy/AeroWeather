@@ -92,6 +92,25 @@ Create Aeronautics installed, wind physically pushes flying contraptions.
     ordering="NONE"
     side="BOTH"
 
+# Optional soft dependencies for M7's Aeronautics wind force integration (see CLAUDE.md).
+# Sable is the actual technical dependency (AeronauticsWindForceApplier's API surface);
+# Create is Sable's own optional dependency and is declared here too since it's present
+# in any real Aeronautics setup. No entry for "aeronautics" itself (not linked against)
+# or "sablecompanion" (embedded via jarJar, not an optional mod install).
+[[dependencies.${mod_id}]]
+    modId="sable"
+    type="optional"
+    versionRange=""
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="create"
+    type="optional"
+    versionRange=""
+    ordering="AFTER"
+    side="BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

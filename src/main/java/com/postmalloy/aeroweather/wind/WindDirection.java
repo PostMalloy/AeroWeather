@@ -3,6 +3,8 @@ package com.postmalloy.aeroweather.wind;
 import java.util.Locale;
 import java.util.Optional;
 
+import net.minecraft.world.phys.Vec3;
+
 /**
  * The eight compass cardinals used for command parsing and display. Wind
  * direction is tracked internally as a continuous 0-360 bearing (see
@@ -73,5 +75,11 @@ public enum WindDirection {
     public static float angularDifference(float a, float b) {
         float diff = Math.abs(normalizeDegrees(a) - normalizeDegrees(b)) % 360.0f;
         return diff > 180.0f ? 360.0f - diff : diff;
+    }
+
+    /** Horizontal unit vector wind blows TOWARD (opposite the FROM-bearing); Y is always 0. */
+    public static Vec3 travelVector(float bearingDeg) {
+        double bearingRad = Math.toRadians(bearingDeg);
+        return new Vec3(-Math.sin(bearingRad), 0.0, Math.cos(bearingRad));
     }
 }

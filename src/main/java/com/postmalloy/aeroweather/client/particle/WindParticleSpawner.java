@@ -5,6 +5,7 @@ import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
+import com.postmalloy.aeroweather.wind.WindDirection;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 
 import net.minecraft.client.Minecraft;
@@ -14,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -124,15 +126,13 @@ public final class WindParticleSpawner {
         // with a small per-particle deviation so the drift doesn't look perfectly uniform.
         float directionJitterDeg = (float) AeroWeatherClientConfig.DIRECTION_JITTER_DEG.getAsDouble();
         float jitteredDirectionDeg = directionDeg + (random.nextFloat() * 2.0F - 1.0F) * directionJitterDeg;
-        double bearingRad = Math.toRadians(jitteredDirectionDeg);
-        double travelX = -Math.sin(bearingRad);
-        double travelZ = Math.cos(bearingRad);
+        Vec3 travel = WindDirection.travelVector(jitteredDirectionDeg);
 
         float minSpeed = (float) AeroWeatherClientConfig.MIN_SPEED.getAsDouble();
         float maxSpeed = (float) AeroWeatherClientConfig.MAX_SPEED.getAsDouble();
         float speed = minSpeed + (maxSpeed - minSpeed) * (strength / 100.0F);
-        double xd = travelX * speed;
-        double zd = travelZ * speed;
+        double xd = travel.x * speed;
+        double zd = travel.z * speed;
 
         level.addParticle(particleType, x, y, z, xd, 0.0, zd);
     }

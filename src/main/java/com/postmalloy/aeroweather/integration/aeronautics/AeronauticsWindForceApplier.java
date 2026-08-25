@@ -1,0 +1,226 @@
+package com.postmalloy.aeroweather.integration.aeronautics;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.joml.Vector3d;
+import org.joml.Vector3dc;
+
+import com.postmalloy.aeroweather.AeroWeather;
+import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
+import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindHeightScaling;
+import com.postmalloy.aeroweather.wind.WindSavedData;
+import com.postmalloy.aeroweather.wind.WindState;
+
+import dev.ryanhcode.sable.api.physics.force.ForceGroup;
+import dev.ryanhcode.sable.api.physics.force.QueuedForceGroup;
+import dev.ryanhcode.sable.api.physics.mass.MassData;
+import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
+import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
+import dev.ryanhcode.sable.api.sublevel.SubLevelObserver;
+import dev.ryanhcode.sable.companion.math.BoundingBox3ic;
+import dev.ryanhcode.sable.companion.math.Pose3dc;
+import dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent;
+import dev.ryanhcode.sable.neoforge.event.ForgeSableSubLevelContainerReadyEvent;
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
+import dev.ryanhcode.sable.sublevel.SubLevel;
+import dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason;
+import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.NeoForge;
+
+/**
+ * The only class in AeroWeather allowed to reference Sable (or Create/
+ * Create Aeronautics/Sable Companion) types directly — see CLAUDE.md's
+ * soft-dependency isolation rule. Only ever constructed by
+ * {@link AeronauticsIntegration} after {@link ModCompat#isLoaded} has
+ * confirmed Sable is present.
+ * <p>
+ * Event registration in {@link #start()} is deliberately manual/instance-
+ * based ({@code NeoForge.EVENT_BUS.addListener(...)}), NOT this
+ * codebase's usual {@code @EventBusSubscriber} + static
+ * {@code @SubscribeEvent} pattern — that pattern gets scanned and
+ * registered by NeoForge at mod-init regardless of intent, which would
+ * force-classload Sable's event types even when Sable isn't installed.
+ * Manual registration inside {@code start()} keeps classloading
+ * conditional on the isolation-rule check already having passed. Do not
+ * "clean this up" to the usual annotation pattern.
+ * <p>
+ * Applies wind force uniformly to every Sable sub-level (not just
+ * recognized Create Aeronautics assemblies) gated only on Sable being
+ * loaded — Sable's sub-level API can't distinguish content, so there's
+ * no clean way to restrict this further; see CLAUDE.md's M6/M7 notes.
+ */
+public final class AeronauticsWindForceApplier implements WindForceApplier, SubLevelObserver {
+    private static final ForceGroup WIND_FORCE_GROUP = new ForceGroup(
+            Component.translatable("aeroweather.aeronautics.force_group.name"),
+            Component.translatable("aeroweather.aeronautics.force_group.description"),
+            0x55AAFF, true);
+
+    /** Lift ratio + local half-extents, cached once per sub-level at assembly. Keyed by SubLevel.getUniqueId(). */
+    private final Map<UUID, LiftProfile> liftProfiles = new ConcurrentHashMap<>();
+    /** Resolves which ServerLevel a ForgeSablePrePhysicsTickEvent belongs to. */
+    private final Map<SubLevelPhysicsSystem, ServerLevel> levelsByPhysicsSystem = new HashMap<>();
+    private volatile boolean disabled = false;
+
+    @Override
+    public void start() {
+        NeoForge.EVENT_BUS.addListener(ForgeSableSubLevelContainerReadyEvent.class, this::onSubLevelContainerReady);
+        NeoForge.EVENT_BUS.addListener(ForgeSablePrePhysicsTickEvent.class, this::onPrePhysicsTick);
+    }
+
+    private void onSubLevelContainerReady(ForgeSableSubLevelContainerReadyEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        SubLevelContainer container = event.getContainer();
+        if (container instanceof ServerSubLevelContainer serverContainer) {
+            levelsByPhysicsSystem.put(serverContainer.physicsSystem(), serverLevel);
+        }
+        container.addObserver(this);
+    }
+
+    /** One-time lift-ratio/extents computation, mirroring Sable's own buildMassTracker() cadence exactly. */
+    @Override
+    public void onSubLevelAdded(SubLevel subLevel) {
+        if (disabled || !(subLevel instanceof ServerSubLevel serverSubLevel)) {
+            return;
+        }
+        try {
+            liftProfiles.put(subLevel.getUniqueId(), buildLiftProfile(serverSubLevel));
+        } catch (Throwable t) {
+            AeroWeather.LOGGER.error("Failed to compute a lift profile for a Sable sub-level; disabling AeroWeather's wind force.", t);
+            disabled = true;
+        }
+    }
+
+    @Override
+    public void onSubLevelRemoved(SubLevel subLevel, SubLevelRemovalReason reason) {
+        liftProfiles.remove(subLevel.getUniqueId());
+    }
+
+    private LiftProfile buildLiftProfile(ServerSubLevel subLevel) {
+        BoundingBox3ic bounds = subLevel.getPlot().getBoundingBox();
+        Level level = subLevel.getLevel();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        int totalSolidBlocks = 0;
+        int liftBlocks = 0;
+        for (int x = bounds.minX(); x <= bounds.maxX(); x++) {
+            for (int y = bounds.minY(); y <= bounds.maxY(); y++) {
+                for (int z = bounds.minZ(); z <= bounds.maxZ(); z++) {
+                    BlockState state = level.getBlockState(pos.set(x, y, z));
+                    if (state.isAir()) {
+                        continue;
+                    }
+                    totalSolidBlocks++;
+                    if (state.is(AeroWeatherBlockTags.ENVELOPE)
+                            || state.is(AeroWeatherBlockTags.LEVITITE)
+                            || state.is(AeroWeatherBlockTags.WINDMILL_SAILS)) {
+                        liftBlocks++;
+                    }
+                }
+            }
+        }
+
+        double liftRatio = totalSolidBlocks == 0 ? 0.0 : (double) liftBlocks / totalSolidBlocks;
+        double halfExtentX = (bounds.maxX() - bounds.minX() + 1) / 2.0;
+        double halfExtentY = (bounds.maxY() - bounds.minY() + 1) / 2.0;
+        double halfExtentZ = (bounds.maxZ() - bounds.minZ() + 1) / 2.0;
+        return new LiftProfile(liftRatio, halfExtentX, halfExtentY, halfExtentZ);
+    }
+
+    /** Fires every physics substep; forces aren't persistent in Sable so they're re-queued fresh each time. */
+    private void onPrePhysicsTick(ForgeSablePrePhysicsTickEvent event) {
+        if (disabled) {
+            return;
+        }
+        try {
+            ServerLevel level = levelsByPhysicsSystem.get(event.getPhysicsSystem());
+            if (level == null) {
+                return;
+            }
+            WindState wind = WindSavedData.get(level).wind();
+            if (wind.strength() <= 0.0f) {
+                return;
+            }
+            ServerSubLevelContainer container = SubLevelContainer.getContainer(level);
+            for (ServerSubLevel subLevel : container.getAllSubLevels()) {
+                try {
+                    applyWindForce(subLevel, level, wind);
+                } catch (Throwable t) {
+                    AeroWeather.LOGGER.warn("Failed to apply wind force to a Sable sub-level; skipping it this tick.", t);
+                }
+            }
+        } catch (Throwable t) {
+            AeroWeather.LOGGER.error("Failed to process a Sable physics tick; disabling AeroWeather's wind force.", t);
+            disabled = true;
+        }
+    }
+
+    private void applyWindForce(ServerSubLevel subLevel, ServerLevel level, WindState wind) {
+        LiftProfile profile = liftProfiles.get(subLevel.getUniqueId());
+        if (profile == null || profile.liftRatio() <= 0.0) {
+            return;
+        }
+
+        MassData mass = subLevel.getMassTracker();
+        Vector3dc centerOfMass = mass == null ? null : mass.getCenterOfMass();
+        if (mass == null || mass.getMass() <= 0.0 || centerOfMass == null) {
+            return;
+        }
+
+        // Center of mass and the force/point passed to applyAndRecordPointForce are both in the
+        // sub-level's LOCAL frame (confirmed by decompiling FloatingBlockController's own gravity/
+        // lift force calls, which never transform to world space before recording). Only the wind
+        // DIRECTION needs rotating from world into local space, and only the center of mass needs a
+        // one-off world-space Y read, purely to sample elevation-adjusted strength at its altitude.
+        Pose3dc pose = subLevel.logicalPose();
+        Vec3 comWorld = pose.transformPosition(new Vec3(centerOfMass.x(), centerOfMass.y(), centerOfMass.z()));
+        float adjustedStrength = WindHeightScaling.scale(wind.strength(), comWorld.y, level.getSeaLevel(),
+                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+        if (adjustedStrength <= 0.0f) {
+            return;
+        }
+
+        Vec3 worldWindDirection = WindDirection.travelVector(wind.directionDeg());
+        Vec3 localDir = pose.transformNormalInverse(worldWindDirection);
+        double localLength = localDir.length();
+        if (localLength < 1.0E-6) {
+            return;
+        }
+        Vector3d localWindDirection = new Vector3d(localDir.x, localDir.y, localDir.z).div(localLength);
+
+        // Closed-form box-silhouette projection: each pair of opposite faces (area 4*ha*hb) contributes
+        // in proportion to how face-on it is to the wind. No block iteration needed here at all - only
+        // the cached half-extents and a fresh per-tick rotation.
+        double sectionalArea = 4.0 * (profile.halfExtentX() * profile.halfExtentY() * Math.abs(localWindDirection.z)
+                + profile.halfExtentY() * profile.halfExtentZ() * Math.abs(localWindDirection.x)
+                + profile.halfExtentX() * profile.halfExtentZ() * Math.abs(localWindDirection.y));
+
+        double magnitude = AeroWeatherCommonConfig.AERONAUTICS_PRESSURE_COEFFICIENT.getAsDouble()
+                * sectionalArea * ((double) adjustedStrength * adjustedStrength) * profile.liftRatio();
+        magnitude = Math.min(magnitude, AeroWeatherCommonConfig.AERONAUTICS_MAX_FORCE.getAsDouble());
+        if (magnitude <= 0.0) {
+            return;
+        }
+
+        Vector3d force = new Vector3d(localWindDirection).mul(magnitude);
+        QueuedForceGroup queued = subLevel.getOrCreateQueuedForceGroup(WIND_FORCE_GROUP);
+        queued.applyAndRecordPointForce(new Vector3d(centerOfMass), force);
+    }
+
+    private record LiftProfile(double liftRatio, double halfExtentX, double halfExtentY, double halfExtentZ) {
+    }
+}
