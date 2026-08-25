@@ -222,11 +222,11 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
     }
 
     /**
-     * A subtle sinusoidal ripple on top of the base force (e.g. +/-5% every 2s
-     * by default) - not a separate force, just a slow multiplier so the push
-     * doesn't feel perfectly static. Phased off the level's game time (not
-     * accumulated substep dt) so it stays stable regardless of how many
-     * physics substeps run per game tick.
+     * A sinusoidal ripple on top of the base force (+/-60% every 2s by
+     * default, tuned via live testing) - not a separate force, just a slow
+     * multiplier so the push doesn't feel perfectly static. Phased off the
+     * level's game time (not accumulated substep dt) so it stays stable
+     * regardless of how many physics substeps run per game tick.
      */
     private static double oscillationMultiplier(ServerLevel level) {
         double amplitude = AeroWeatherCommonConfig.AERONAUTICS_OSCILLATION_AMPLITUDE.getAsDouble();
