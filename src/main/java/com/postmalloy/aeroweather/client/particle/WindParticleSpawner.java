@@ -1,6 +1,7 @@
 package com.postmalloy.aeroweather.client.particle;
 
 import com.postmalloy.aeroweather.AeroWeather;
+import com.postmalloy.aeroweather.client.ClientActiveContraptions;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
@@ -43,6 +44,14 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * {@link AeroWeatherClientConfig#GUST_PARTICLE_MIN_STRENGTH} (default
  * 50/100), via its own accumulator so its rate doesn't borrow from or
  * interfere with the always-on {@code WIND_STREAK} spawning.
+ * <p>
+ * If {@link AeroWeatherClientConfig#RESTRICT_TO_ACTIVE_CONTRAPTIONS} is
+ * enabled, both particle types are suppressed entirely unless the player
+ * is within {@link AeroWeatherClientConfig#ACTIVE_CONTRAPTION_RADIUS} of
+ * a Sable sub-level currently experiencing real wind force — synced from
+ * {@code AeronauticsWindForceApplier} via {@link ClientActiveContraptions}.
+ * Off by default, so ambient particles work exactly as before unless a
+ * player opts in.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
@@ -83,6 +92,10 @@ public final class WindParticleSpawner {
             return;
         }
 
+        if (AeroWeatherClientConfig.RESTRICT_TO_ACTIVE_CONTRAPTIONS.get() && !isNearActiveContraption(level, player)) {
+            return;
+        }
+
         float maxParticlesPerTick = (float) AeroWeatherClientConfig.MAX_PARTICLES_PER_TICK.getAsDouble();
         spawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
         while (spawnAccumulator >= 1.0F) {
@@ -100,6 +113,29 @@ public final class WindParticleSpawner {
         } else {
             gustSpawnAccumulator = 0.0F;
         }
+    }
+
+    /**
+     * True if the player is within {@code AeroWeatherClientConfig.ACTIVE_CONTRAPTION_RADIUS}
+     * of any position in {@link ClientActiveContraptions} — Sable sub-levels
+     * currently experiencing actual wind force (0 lift-tagged blocks never
+     * reach this synced list at all, per how the server builds it, so no
+     * separate check is needed here for that case).
+     */
+    private static boolean isNearActiveContraption(ClientLevel level, LocalPlayer player) {
+        ResourceLocation dimension = ClientActiveContraptions.dimension();
+        if (dimension == null || !dimension.equals(level.dimension().location())) {
+            return false;
+        }
+        double radius = AeroWeatherClientConfig.ACTIVE_CONTRAPTION_RADIUS.getAsDouble();
+        double radiusSq = radius * radius;
+        Vec3 playerPos = player.position();
+        for (Vec3 position : ClientActiveContraptions.positions()) {
+            if (playerPos.distanceToSqr(position) <= radiusSq) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void spawnOne(ClientLevel level, LocalPlayer player, float directionDeg, float strength, SimpleParticleType particleType) {

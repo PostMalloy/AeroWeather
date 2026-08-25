@@ -50,6 +50,8 @@
   "aeroweather.configuration.directionJitterDegrees": "Directional Jitter (deg)",
   "aeroweather.configuration.outdoorsOnly": "Outdoor Check",
   "aeroweather.configuration.gustParticleMinStrength": "Min Strength for Gust Particles",
+  "aeroweather.configuration.restrictToActiveContraptions": "Restrict to Active Contraptions",
+  "aeroweather.configuration.activeContraptionRadius": "Active Contraption Radius",
 
   "commands.aeroweather.wind.set": "Wind set to blow from %s at strength %s",
   "commands.aeroweather.wind.reset": "Wind reset to natural simulation",

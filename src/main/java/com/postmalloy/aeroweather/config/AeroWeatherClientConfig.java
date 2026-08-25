@@ -22,6 +22,8 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue DIRECTION_JITTER_DEG;
     public static final ModConfigSpec.BooleanValue OUTDOORS_ONLY;
     public static final ModConfigSpec.DoubleValue GUST_PARTICLE_MIN_STRENGTH;
+    public static final ModConfigSpec.BooleanValue RESTRICT_TO_ACTIVE_CONTRAPTIONS;
+    public static final ModConfigSpec.DoubleValue ACTIVE_CONTRAPTION_RADIUS;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -60,6 +62,12 @@ public final class AeroWeatherClientConfig {
         GUST_PARTICLE_MIN_STRENGTH = builder
                 .comment("Minimum elevation-adjusted wind strength (0-100 scale) required for the WIND_GUST particle type to spawn, on top of the always-on WIND_STREAK particles.")
                 .defineInRange("gustParticleMinStrength", 50.0, 0.0, 100.0);
+        RESTRICT_TO_ACTIVE_CONTRAPTIONS = builder
+                .comment("If enabled, wind particles (both types) only spawn near a Sable contraption currently experiencing wind force, instead of ambiently around the player.")
+                .define("restrictToActiveContraptions", false);
+        ACTIVE_CONTRAPTION_RADIUS = builder
+                .comment("Blocks from an active contraption within which wind particles are still allowed to spawn. Only used when restrictToActiveContraptions is enabled.")
+                .defineInRange("activeContraptionRadius", 32.0, 0.0, 512.0);
         builder.pop();
 
         SPEC = builder.build();

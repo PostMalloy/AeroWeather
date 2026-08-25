@@ -1,6 +1,8 @@
 package com.postmalloy.aeroweather.integration.aeronautics;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,6 +12,7 @@ import org.joml.Vector3dc;
 
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
+import com.postmalloy.aeroweather.network.payload.ClientboundActiveContraptionsPayload;
 import com.postmalloy.aeroweather.wind.WindDirection;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindSavedData;
@@ -40,6 +43,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.registries.RegisterEvent;
 
 /**
@@ -85,10 +90,15 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             Component.translatable("aeroweather.aeronautics.force_group.description"),
             0x55AAFF, true);
 
+    /** Broadcast cadence for active-contraption positions - independent of Sable's own (much more frequent) physics substep rate. */
+    private static final int ACTIVE_CONTRAPTIONS_BROADCAST_INTERVAL_TICKS = 5;
+
     /** Lift ratio + local half-extents, cached once per sub-level on first force application. Keyed by SubLevel.getUniqueId(). */
     private final Map<UUID, LiftProfile> liftProfiles = new ConcurrentHashMap<>();
     /** Resolves which ServerLevel a ForgeSablePrePhysicsTickEvent belongs to. */
     private final Map<SubLevelPhysicsSystem, ServerLevel> levelsByPhysicsSystem = new HashMap<>();
+    /** World-space positions with wind force currently applied, as of the latest physics tick, per level. Replaced (not appended to) every physics tick. */
+    private final Map<ServerLevel, List<Vec3>> activePositionsByLevel = new ConcurrentHashMap<>();
     private volatile boolean disabled = false;
 
     @Override
@@ -97,10 +107,31 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             modEventBus.addListener(RegisterEvent.class, this::onRegisterForceGroup);
             NeoForge.EVENT_BUS.addListener(ForgeSableSubLevelContainerReadyEvent.class, this::onSubLevelContainerReady);
             NeoForge.EVENT_BUS.addListener(ForgeSablePrePhysicsTickEvent.class, this::onPrePhysicsTick);
+            NeoForge.EVENT_BUS.addListener(LevelTickEvent.Post.class, this::onLevelTick);
         } catch (Throwable t) {
             AeroWeather.LOGGER.error("Failed to start the Aeronautics wind force integration; disabling.", t);
             disabled = true;
         }
+    }
+
+    /**
+     * Broadcasts the latest active-contraption-position snapshot on a fixed,
+     * low cadence (independent of Sable's physics-substep rate, which fires
+     * far more often than clients need position updates for a particle-
+     * gating feature). Always broadcasts, even an empty list, so clients
+     * correctly clear stale positions once nothing is active anymore -
+     * mirrors WindSimulator's own tick-gated cadence pattern.
+     */
+    private void onLevelTick(LevelTickEvent.Post event) {
+        if (disabled || !(event.getLevel() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        if (serverLevel.getGameTime() % ACTIVE_CONTRAPTIONS_BROADCAST_INTERVAL_TICKS != 0) {
+            return;
+        }
+        List<Vec3> positions = activePositionsByLevel.getOrDefault(serverLevel, List.of());
+        PacketDistributor.sendToPlayersInDimension(serverLevel,
+                new ClientboundActiveContraptionsPayload(serverLevel.dimension().location(), positions));
     }
 
     /**
@@ -188,6 +219,11 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             if (level == null) {
                 return;
             }
+            // Always replaced fresh this tick (even to empty) - never left stale from a previous
+            // tick, e.g. if wind strength just dropped to 0 and the loop below never runs.
+            List<Vec3> activePositions = new ArrayList<>();
+            activePositionsByLevel.put(level, activePositions);
+
             WindState wind = WindSavedData.get(level).wind();
             if (wind.strength() <= 0.0f) {
                 return;
@@ -195,7 +231,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             ServerSubLevelContainer container = SubLevelContainer.getContainer(level);
             for (ServerSubLevel subLevel : container.getAllSubLevels()) {
                 try {
-                    applyWindForce(subLevel, level, wind);
+                    applyWindForce(subLevel, level, wind, activePositions);
                 } catch (Throwable t) {
                     AeroWeather.LOGGER.warn("Failed to apply wind force to a Sable sub-level; skipping it this tick.", t);
                 }
@@ -206,7 +242,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         }
     }
 
-    private void applyWindForce(ServerSubLevel subLevel, ServerLevel level, WindState wind) {
+    private void applyWindForce(ServerSubLevel subLevel, ServerLevel level, WindState wind, List<Vec3> activePositions) {
         LiftProfile profile = getOrBuildLiftProfile(subLevel);
         if (profile.liftRatio() <= 0.0) {
             return;
@@ -259,6 +295,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         Vector3d force = new Vector3d(localWindDirection).mul(magnitude);
         QueuedForceGroup queued = subLevel.getOrCreateQueuedForceGroup(WIND_FORCE_GROUP);
         queued.applyAndRecordPointForce(new Vector3d(centerOfMass), force);
+        activePositions.add(comWorld);
     }
 
     /**

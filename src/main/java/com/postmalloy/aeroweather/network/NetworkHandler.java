@@ -1,6 +1,7 @@
 package com.postmalloy.aeroweather.network;
 
 import com.postmalloy.aeroweather.AeroWeather;
+import com.postmalloy.aeroweather.network.payload.ClientboundActiveContraptionsPayload;
 import com.postmalloy.aeroweather.network.payload.ClientboundWindSyncPayload;
 
 import net.neoforged.bus.api.SubscribeEvent;
@@ -15,6 +16,7 @@ public final class NetworkHandler {
     @SubscribeEvent
     static void onRegisterPayloadHandlers(RegisterPayloadHandlersEvent event) {
         event.registrar("1")
-                .playToClient(ClientboundWindSyncPayload.TYPE, ClientboundWindSyncPayload.STREAM_CODEC, ClientPayloadHandler::handleWindSync);
+                .playToClient(ClientboundWindSyncPayload.TYPE, ClientboundWindSyncPayload.STREAM_CODEC, ClientPayloadHandler::handleWindSync)
+                .playToClient(ClientboundActiveContraptionsPayload.TYPE, ClientboundActiveContraptionsPayload.STREAM_CODEC, ClientPayloadHandler::handleActiveContraptions);
     }
 }
