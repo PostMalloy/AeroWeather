@@ -56,17 +56,24 @@ config/
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag
 
 `AeroWeatherClient.java` registers NeoForge's built-in `ConfigurationScreen`
-(no custom UI code of our own). Confirmed by reading its decompiled
-source (`net.neoforged.neoforge.client.gui.ConfigurationScreen`): every
-TOML section and leaf value's on-screen label is looked up as
-`<modid>.configuration.<dotted.path>` (e.g.
-`aeroweather.configuration.aeronautics.pressureCoefficient`), falling
-back to printing that raw key verbatim when no lang entry exists — so
-**every** `push(...)` section and `define*(...)` leaf across both
-config classes needs a matching `en_us.json` entry (a bare
-`"<key>": "<key>"` is enough to just show the setting name) or the
-config screen displays untranslated dotted keys instead of readable
-labels. Keep these in sync whenever a config field is added/renamed.
+(no custom UI code of our own). Reading its decompiled source
+(`net.neoforged.neoforge.client.gui.ConfigurationScreen`) suggested
+each leaf value's label is looked up as `<modid>.configuration.<section>.<key>`
+(the full dotted path) — **that guess was wrong, corrected via live
+testing**: each section's sub-screen actually builds its entry list
+from that section's own relative key map, so leaf values are looked up
+as `<modid>.configuration.<key>` alone (no section prefix — e.g.
+`aeroweather.configuration.pressureCoefficient`, not
+`...aeronautics.pressureCoefficient`). Only the top-level section
+buttons themselves (`drift`, `gust`, `weather`, `sync`, `height`,
+`aeronautics`, `particles`) use their own bare name. Falls back to
+printing the raw key verbatim when no lang entry exists — so **every**
+`push(...)` section and `define*(...)` leaf across both config classes
+needs a matching flat `en_us.json` entry (nice display names, not just
+the bare key) or the config screen shows an untranslated key instead.
+Keep these in sync whenever a config field is added/renamed/moved
+between sections (a leaf's flat key must stay unique mod-wide, since
+section context isn't part of its lookup).
 
 wind/
   WindDirection.java                  cardinal enum + degree/vector helpers; travelVector(bearingDeg) -> Vec3
