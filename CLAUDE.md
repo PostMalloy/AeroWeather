@@ -55,6 +55,19 @@ config/
   AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag
 
+`AeroWeatherClient.java` registers NeoForge's built-in `ConfigurationScreen`
+(no custom UI code of our own). Confirmed by reading its decompiled
+source (`net.neoforged.neoforge.client.gui.ConfigurationScreen`): every
+TOML section and leaf value's on-screen label is looked up as
+`<modid>.configuration.<dotted.path>` (e.g.
+`aeroweather.configuration.aeronautics.pressureCoefficient`), falling
+back to printing that raw key verbatim when no lang entry exists — so
+**every** `push(...)` section and `define*(...)` leaf across both
+config classes needs a matching `en_us.json` entry (a bare
+`"<key>": "<key>"` is enough to just show the setting name) or the
+config screen displays untranslated dotted keys instead of readable
+labels. Keep these in sync whenever a config field is added/renamed.
+
 wind/
   WindDirection.java                  cardinal enum + degree/vector helpers; travelVector(bearingDeg) -> Vec3
   WindState.java                      direction/strength + drift target + gust + weather-boost + override; NBT I/O
