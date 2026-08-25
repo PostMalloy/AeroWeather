@@ -65,9 +65,9 @@ wind/
 
 network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
-  payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength
+  payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength, gusting
   ClientPayloadHandler.java           updates client.ClientWindState on receipt
-  WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat (per simulation step)
+  WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat+gust-edge (per simulation step)
   PlayerSyncListener.java             PlayerLoggedInEvent/PlayerChangedDimensionEvent/PlayerRespawnEvent -> WindSync.sendTo(player)
 
 client/
@@ -78,7 +78,7 @@ client/
     WindParticleSpawner.java          ClientTickEvent.Post: spawns particles around player from ClientWindState
 
 registry/
-  AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK
+  AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST
   AeroWeatherCommandArgumentTypes.java  DeferredRegister<ArgumentTypeInfo<?,?>>: registers DirectionArgument for command-tree sync
 
 command/
@@ -105,13 +105,29 @@ standalone, config-tunable, zero external dependencies**. Still planned:
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png`, declared
 in `assets/aeroweather/particles/wind_streak.json`. `WindStreakParticle`
-cycles them on a fixed 200ms-per-frame loop (deliberately not vanilla's
+cycles them on a fixed 100ms-per-frame loop (deliberately not vanilla's
 `setSpriteFromAge`, which spreads all frames evenly across the
 particle's lifetime once with no looping) by indexing `SpriteSet`
 directly: since `SpriteSet` only exposes `get(age, maxAge)` with an
 internal `age*(size-1)/maxAge` formula, calling `get(frame, FRAME_COUNT
 - 1)` resolves to exactly `frame` — the only way to get indexed access
 without a native by-index accessor.
+
+A second particle type, `WIND_GUST` (textures
+`gustparticle{1-8}.png`, declared in `wind_gust.json`), shares the
+exact same `WindStreakParticle` class and rendering/orientation logic —
+only the registered `SimpleParticleType`/`SpriteSet` differ, wired via a
+second `event.registerSpriteSet(...)` call in
+`AeroWeatherParticleProviders`. It's spawned by `WindParticleSpawner`
+only while `ClientWindState.isGusting()` is true, using its own
+accumulator so its rate is independent of the always-on `WIND_STREAK`
+spawning. `isGusting()` is server-authoritative
+(`WindState.isGusting()`, true while `gustStepsRemaining > 0`) and
+synced to the client as a 4th field on `ClientboundWindSyncPayload`;
+`WindSync` treats a gust starting or stopping as its own immediate-sync
+trigger (alongside the existing direction/strength thresholds and
+heartbeat) so gust particles react promptly instead of waiting up to
+the heartbeat interval.
 
 Particles spawn at a random angle around the player (not just upwind —
 they drift toward the travel direction regardless of spawn angle, so
@@ -216,9 +232,9 @@ tested in open sky at altitude.
   tick-filtered event), not every tick.
 - Server→client sync uses a `CustomPacketPayload` registered via
   `RegisterPayloadHandlersEvent`. Sync immediately on player
-  join/dimension-change/respawn and on command overrides; otherwise only
-  on a delta threshold (direction Δ > 2°, strength Δ ≥ 1) or a ~5s
-  heartbeat — never every tick.
+  join/dimension-change/respawn, on command overrides, and whenever a
+  gust starts or stops; otherwise only on a delta threshold (direction Δ
+  > 2°, strength Δ ≥ 1) or a ~5s heartbeat — never every tick.
 
 ## Command reference
 
