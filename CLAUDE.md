@@ -217,17 +217,26 @@ tested in open sky at altitude.
 - Natural (non-overridden) strength is additionally capped per weather
   tier via `currentStrengthCap()`:
   `AeroWeatherCommonConfig.STRENGTH_CAP_CLEAR`/`_RAIN`/`_THUNDER`
-  (defaults 50/75/100), applied as a `Math.min` after drift + gust +
-  weatherBoost are summed and clamped. This bounds the base 0-100 value
-  only — it's separate from and upstream of `WindHeightScaling`'s
-  elevation adjustment, which can still push the reported/rendered
-  strength above the tier cap at high elevation. Overridden strength
-  (via the command) ignores the cap entirely, same as it already ignores
-  drift/gust/weatherBoost. Verified live: forcing `gust.chancePerSecond`,
-  `minMagnitude`/`maxMagnitude` high enough to guarantee the pre-cap sum
-  exceeds every tier's cap, then cycling weather clear -> rain -> thunder
-  via RCON and confirming `/aeroweather wind info` reported exactly
-  50, 75, then 100.
+  (defaults 50/75/100) — a maximum, not a fixed value. The final
+  drift + gust + weatherBoost sum is capped as a hard ceiling via
+  `Math.min` (so a gust spike still can't exceed it), but the *drift
+  target itself* is also bounded by the same cap in `tickDrift` — a
+  fix over the original implementation, which only capped the final
+  sum: `baseStrength`'s own random walk was otherwise free to wander
+  above the tier cap (only clamped to [0,100]) and would then sit
+  pinned at the cap for however long it took to randomly drift back
+  down, which read as "stuck at a constant" rather than "capped but
+  still varying." With the drift target itself bounded, `baseStrength`
+  keeps fluctuating naturally below the ceiling as intended. This
+  bounds the base 0-100 value only — it's separate from and upstream
+  of `WindHeightScaling`'s elevation adjustment, which can still push
+  the reported/rendered strength above the tier cap at high elevation.
+  Overridden strength (via the command) ignores the cap entirely, same
+  as it already ignores drift/gust/weatherBoost. Verified live: forcing
+  `gust.chancePerSecond`, `minMagnitude`/`maxMagnitude` high enough to
+  guarantee the pre-cap sum exceeds every tier's cap, then cycling
+  weather clear -> rain -> thunder via RCON and confirming
+  `/aeroweather wind info` reported exactly 50, 75, then 100.
 - Command override pins an absolute direction/strength and **freezes**
   natural drift while active; `reset` resumes drift from wherever it was.
 - Simulation runs at ~1 Hz (every 20 ticks, gated inside a
