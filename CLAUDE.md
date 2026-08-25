@@ -262,12 +262,15 @@ Force formula and where each input comes from:
 the explicit design requirement. 0 lift-tagged blocks → 0 force,
 handled as a cheap early-exit. `oscillation = 1 +
 oscillationAmplitude * sin(2π * (gameTime/20s) / oscillationPeriodSeconds)`
-— a subtle sinusoidal ripple (default ±5% every 2s) phased off the
-level's game time rather than accumulated physics-substep dt, so it
-stays stable regardless of how many substeps run per game tick.
-Live-testing feedback (a real assembled hot air balloon) found the
-initial `pressureCoefficient` default (0.01) far too strong; lowered by
-50x to `0.0002`.
+— a sinusoidal ripple (default ±60% every 2s) phased off the level's
+game time rather than accumulated physics-substep dt, so it stays
+stable regardless of how many substeps run per game tick. Both
+`pressureCoefficient` and `oscillationAmplitude` defaults were tuned
+from live testing against a real assembled hot air balloon —
+`pressureCoefficient` down 500x from its original guess (0.01 → 0.0002
+→ `0.00001`, the first drop alone was already too strong) and
+`oscillationAmplitude` up from the initially-requested "subtle" 0.05 to
+`0.6` once it was actually felt in-game.
 
 Lift blocks are the union of three confirmed, pre-existing block tags —
 `#aeronautics:envelope` (balloon fabric), `#aeronautics:levitite`
