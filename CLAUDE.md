@@ -65,9 +65,9 @@ wind/
 
 network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
-  payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength, gusting
+  payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength
   ClientPayloadHandler.java           updates client.ClientWindState on receipt
-  WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat+gust-edge (per simulation step)
+  WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat (per simulation step)
   PlayerSyncListener.java             PlayerLoggedInEvent/PlayerChangedDimensionEvent/PlayerRespawnEvent -> WindSync.sendTo(player)
 
 client/
@@ -119,15 +119,11 @@ exact same `WindStreakParticle` class and rendering/orientation logic —
 only the registered `SimpleParticleType`/`SpriteSet` differ, wired via a
 second `event.registerSpriteSet(...)` call in
 `AeroWeatherParticleProviders`. It's spawned by `WindParticleSpawner`
-only while `ClientWindState.isGusting()` is true, using its own
-accumulator so its rate is independent of the always-on `WIND_STREAK`
-spawning. `isGusting()` is server-authoritative
-(`WindState.isGusting()`, true while `gustStepsRemaining > 0`) and
-synced to the client as a 4th field on `ClientboundWindSyncPayload`;
-`WindSync` treats a gust starting or stopping as its own immediate-sync
-trigger (alongside the existing direction/strength thresholds and
-heartbeat) so gust particles react promptly instead of waiting up to
-the heartbeat interval.
+only once the elevation-adjusted strength exceeds
+`AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH` (default 50/100),
+using its own accumulator so its rate is independent of the always-on
+`WIND_STREAK` spawning. This is a purely client-side threshold on the
+already-synced strength value — no separate gust-state sync was needed.
 
 Particles spawn at a random angle around the player (not just upwind —
 they drift toward the travel direction regardless of spawn angle, so
@@ -232,9 +228,9 @@ tested in open sky at altitude.
   tick-filtered event), not every tick.
 - Server→client sync uses a `CustomPacketPayload` registered via
   `RegisterPayloadHandlersEvent`. Sync immediately on player
-  join/dimension-change/respawn, on command overrides, and whenever a
-  gust starts or stops; otherwise only on a delta threshold (direction Δ
-  > 2°, strength Δ ≥ 1) or a ~5s heartbeat — never every tick.
+  join/dimension-change/respawn and on command overrides; otherwise only
+  on a delta threshold (direction Δ > 2°, strength Δ ≥ 1) or a ~5s
+  heartbeat — never every tick.
 
 ## Command reference
 
