@@ -56,7 +56,7 @@ config/
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag
 
 wind/
-  WindDirection.java                  cardinal enum + degree/vector helpers
+  WindDirection.java                  cardinal enum + degree/vector helpers; travelVector(bearingDeg) -> Vec3
   WindState.java                      direction/strength + drift target + gust + weather-boost + override; NBT I/O
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
@@ -86,21 +86,26 @@ command/
   DirectionArgument.java              ArgumentType<Float>: cardinal keyword OR degree float
 
 integration/
-  ModCompat.java                      ModList.get().isLoaded(...) checks, modid constants
+  ModCompat.java                      ModList.get().isLoaded(modId) + SABLE_MODID constant; zero Sable imports
   aeronautics/
-    WindForceApplier.java             interface: tick(ServerLevel, WindState)
-    NoopWindForceApplier.java         default no-op
+    AeroWeatherBlockTags.java         TagKey<Block> ENVELOPE/LEVITITE/WINDMILL_SAILS; pure data tags, always safe to classload
+    WindForceApplier.java             interface: start() (NOT a per-tick method - the real applier drives
+                                       itself off Sable's own physics-tick event once started)
+    NoopWindForceApplier.java         start() no-op
     AeronauticsWindForceApplier.java  ONLY class allowed to reference Create/Aeronautics/Sable types directly
-    AeronauticsIntegration.java       resolves Noop vs real applier based on ModCompat
+    AeronauticsIntegration.java       static get(); resolve() checks ModCompat.isLoaded("sable") BEFORE
+                                       constructing AeronauticsWindForceApplier, catch(Throwable) -> Noop
 ```
 
 Built so far: `AeroWeather.java`, `AeroWeatherClient.java`, the full
 `wind/` package (M1), `command/` + `registry/AeroWeatherCommandArgumentTypes.java`
 (M3), the full `network/` package + `client/ClientWindState.java` (M2),
-`client/particle/` + `registry/AeroWeatherParticles.java` (M4), and the
-full `config/` package (M5) — **checkpoint reached: the mod is fully
-standalone, config-tunable, zero external dependencies**. Still planned:
-`integration/` (M6/M7).
+`client/particle/` + `registry/AeroWeatherParticles.java` (M4), the
+full `config/` package (M5), and the full `integration/` package (M6
+research spike + M7 implementation) — wind now physically pushes every
+Sable-based contraption (Create Aeronautics, Create Offroad, or any
+other mod built on Sable), gated on Sable alone being loaded, with zero
+hard dependency on it.
 
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png`, declared
@@ -234,6 +239,38 @@ tested in open sky at altitude.
   on a delta threshold (direction Δ > 2°, strength Δ ≥ 1) or a ~5s
   heartbeat — never every tick.
 
+## M7: Aeronautics wind force
+
+`AeronauticsWindForceApplier` (`integration/aeronautics/`) applies real
+force to every Sable sub-level's center of mass, every physics tick.
+Gated purely on `sable` being loaded (see "Open questions" below for
+why) — a no-op with zero Sable classloading when it isn't.
+
+Force formula and where each input comes from:
+
+| Input | Source | Cached or per-tick |
+|---|---|---|
+| Sectional area | Closed-form box-silhouette formula (`4 * (hx*hy*abs(dz) + hy*hz*abs(dx) + hx*hz*abs(dy))`) against cached local half-extents + a fresh per-tick local wind direction | Half-extents cached once at assembly; direction/area recomputed every physics tick (cheap vector math only, no block iteration) |
+| Lift ratio | `(lift-tagged blocks) / (total non-air blocks)`, one-time scan over the sub-level's local plot bounds at assembly | Cached once, **never refreshed** on later block edits — deliberately mirrors Sable's own `buildMassTracker()`, which has the exact same one-shot-at-assembly limitation |
+| Wind strength | `WindSavedData.get(level).wind().strength()` → `WindHeightScaling.scale(...)` sampled at the contraption's own center-of-mass world Y | Wind state updates ~1Hz via `WindSimulator`; height-scaled value and force are recomputed fresh every physics tick |
+| Force direction | `WindDirection.travelVector(bearingDeg)`, rotated into the sub-level's local frame via `Pose3dc.transformNormalInverse(...)` | Recomputed every physics tick |
+| Application point | The sub-level's local-space center of mass, used as-is (not transformed to world space — see "External references") | Read fresh every tick |
+
+`magnitude = pressureCoefficient * sectionalArea * strength² * liftRatio`,
+clamped to `AeroWeatherCommonConfig.AERONAUTICS_MAX_FORCE` — a single
+scalar multiplier, not a separate vertical lift force, per the explicit
+design requirement. 0 lift-tagged blocks → 0 force, handled as a cheap
+early-exit.
+
+Lift blocks are the union of three confirmed, pre-existing block tags —
+`#aeronautics:envelope` (balloon fabric), `#aeronautics:levitite`
+(magic floating rock), `#create:windmill_sails` (Create's sail blocks,
+which itself includes `#minecraft:wool`) — verified by extracting
+`data/.../tags/block/*.json` from the real jars. All three are pure
+data, referenced via `AeroWeatherBlockTags`' `TagKey<Block>` constants
+with zero compile dependency on Aeronautics/Create Java classes,
+preserving M6's Sable-only compile footprint.
+
 ## Command reference
 
 ```
@@ -272,15 +309,20 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   exact version Sable itself embeds — see "External references"); the
   `jarJar` half (embedding it into AeroWeather's own published jar) is
   still open, see below.
-- `neoforge.mods.toml` should declare Create and Sable (not Aeronautics —
+- `neoforge.mods.toml` declares Create and Sable (not Aeronautics —
   AeroWeather doesn't link against it, see "External references") as
   `type="optional"`, `ordering="AFTER"` dependencies using their
-  confirmed real modIds (`create`, `sable`) once M7 implementation
-  begins — no entry needed for Sable Companion.
+  confirmed real modIds (`create`, `sable`). **Wired as of M7** — no
+  entry for Sable Companion.
 - Because Sable's internal physics API carries no third-party stability
   guarantee, wrap the actual force-application call defensively
-  (try/catch, degrade to "log once + disable" rather than crash) once
-  that code exists.
+  (try/catch, degrade to "log once + disable" rather than crash).
+  **Implemented as of M7**: `AeronauticsWindForceApplier` uses two
+  tiers — a systemic failure (e.g. during the one-time lift-profile
+  build) sets a global `disabled` flag and stops all further work; a
+  per-sub-level failure during force application just skips that one
+  sub-level for the tick (a single malformed contraption shouldn't take
+  the whole feature down).
 
 ## Out of scope (for now)
 
@@ -324,7 +366,15 @@ but don't actively make future extension harder either:
   and the real force entrypoint, superseding everything this file
   previously guessed. See "External references" for the full findings
   and "Open questions" for the one design decision flagged for M7)
-- M7 — Aeronautics integration implementation
+- ~~M7 — Aeronautics integration implementation~~ (`integration/` package
+  built: `AeronauticsWindForceApplier` applies wind force to every Sable
+  sub-level's center of mass, gated on `sable` alone being loaded. See
+  "M7: Aeronautics wind force" below for the full design. Verified by
+  compiling only — the isolation rule was checked by grepping for
+  Sable/Create/Aeronautics imports outside `AeronauticsWindForceApplier.java`
+  (found none) — live in-game verification (does a real assembled
+  airship actually get pushed, does the force feel right) is explicitly
+  deferred to M8)
 - M8 — Integration testing & tuning against real in-game airship behavior
 
 ## External references
@@ -393,16 +443,56 @@ but don't actively make future extension harder either:
     is the one built for continuous per-tick forces like drag/wind
     (rather than one-shot impulses) and is what shows up correctly
     attributed in Sable's own force debug/visualization tooling.
+    **Coordinate space (confirmed at M7 implementation time by
+    decompiling `FloatingBlockController`'s own gravity/lift force
+    calls)**: both `point` and `force` are in the sub-level's LOCAL
+    frame, not world space — Sable's own code rotates a world-space
+    vector (gravity) into local space via `Pose3dc.transformNormalInverse(...)`
+    and passes the result straight to `recordPointForce`/
+    `applyAndRecordPointForce` without ever transforming to world space.
+    Likewise `MassData.getCenterOfMass()` is LOCAL (built directly from
+    the same local block-iteration bounds `MassTracker.build` consumes).
+    `AeronauticsWindForceApplier` mirrors this exactly: only the wind
+    *direction* gets rotated (world→local via `transformNormalInverse`);
+    the center-of-mass point is used as-is, with a `transformPosition`
+    to world space done separately and only to read the contraption's
+    world-space Y for `WindHeightScaling`.
   - **Tick hook**: `dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent`
     (the NeoForge-specific wrapper around the loader-agnostic
     `SablePrePhysicsTickEvent` interface) **extends
     `net.neoforged.bus.api.Event`** and is posted on the normal NeoForge
-    event bus — subscribe with a plain `@SubscribeEvent` like any other
-    NeoForge event. Carries `getPhysicsSystem()`/`getTimeStep()` (the
-    physics substep dt, which runs at a different cadence than our 1Hz
+    event bus. Carries `getPhysicsSystem()`/`getTimeStep()` (the physics
+    substep dt, which runs at a different cadence than our 1Hz
     `WindSimulator` — re-queue the force every physics tick from
     whatever `WindState` last computed; don't try to raise
-    `WindSimulator`'s own cadence to match).
+    `WindSimulator`'s own cadence to match). **Correction from this
+    file's earlier guess**: this can NOT be subscribed via the usual
+    `@EventBusSubscriber`+static-`@SubscribeEvent` pattern used
+    everywhere else in this codebase — that pattern gets scanned/
+    registered by NeoForge at mod-init regardless of intent, which would
+    force-classload this Sable event type even when Sable isn't
+    installed, violating the isolation rule below. `AeronauticsWindForceApplier`
+    instead registers manually
+    (`NeoForge.EVENT_BUS.addListener(EventClass.class, this::handler)`)
+    from inside `start()`, which itself only ever runs after the
+    `ModCompat` check passed.
+  - **Sub-level assembly hook**: `SubLevelContainer.addObserver(SubLevelObserver)`
+    (registered from `ForgeSableSubLevelContainerReadyEvent`, also a
+    real NeoForge `Event`) — `onSubLevelAdded(SubLevel)` fires once per
+    assembled contraption and is where `AeronauticsWindForceApplier`
+    does its one-time lift-block-ratio scan, mirroring exactly when
+    Sable itself rebuilds `buildMassTracker()`.
+  - **Block iteration for the local bounding box**: `ServerSubLevel.getPlot()
+    -> ServerLevelPlot`, `.getBoundingBox() -> BoundingBox3ic` (from
+    Sable Companion's `dev.ryanhcode.sable.companion.math` package,
+    confirmed public with `minX()`/`maxX()`/etc.) gives the sub-level's
+    LOCAL integer bounds — the same bounds `MassTracker.build` iterates.
+    Sable itself wraps the level in a `dev.ryanhcode.sable.util.LevelAccelerator`
+    (a chunk-caching `BlockGetter`) for this, but that class lives
+    outside the `api` package; `AeronauticsWindForceApplier` uses the
+    sub-level's plain `Level.getBlockState(BlockPos)` directly instead
+    (a definitely-stable Minecraft API, and the perf difference is
+    negligible since this scan happens once per assembly, not per tick).
   - **Bonus discovery — a native ambient-wind hook, but internal/unstable
     and currently a no-op everywhere**: `dev.ryanhcode.sable.api.SubLevelHelper.registerWindProvider(BiFunction<Vector3dc,
     Level, Vector3dc>)` lets a mod register itself as a source of
@@ -492,20 +582,17 @@ Resolve these before relying on them — don't let assumptions calcify:
   Companion into AeroWeather's own published jar (M7 — not needed until
   AeroWeather actually ships; `implementation` is sufficient for dev
   builds/testing in the meantime).
-- **Design decision made during M6, flagged for revisiting at M7**:
-  Sable's sub-level API is entirely content-agnostic — nothing
-  distinguishes a Create Aeronautics airship from a Create Offroad
-  truck or any other Sable-based contraption (no "this is an
+- **Design decision made during M6, implemented as-is at M7 (not
+  revisited)**: Sable's sub-level API is entirely content-agnostic —
+  nothing distinguishes a Create Aeronautics airship from a Create
+  Offroad truck or any other Sable-based contraption (no "this is an
   Aeronautics assembly" tag was found anywhere in the Sable or
-  Aeronautics API surface). `AeronauticsWindForceApplier` is planned to
-  apply wind force to **every** Sable sub-level uniformly (simplest, and
-  physically honest — anything airborne and exposed should feel wind
-  regardless of which mod assembled it) and to gate activation on
-  **`sable`** being loaded rather than specifically `aeronautics`
-  (matches the true technical dependency — Sable is literally all
-  AeroWeather compiles/links against). This does technically broaden
-  "Create Aeronautics interaction" to "any Sable contraption
-  interaction" in practice; flagged here rather than silently assumed.
+  Aeronautics API surface). `AeronauticsWindForceApplier` applies wind
+  force to **every** Sable sub-level uniformly and gates activation on
+  **`sable`** being loaded, not specifically `aeronautics`. This does
+  technically broaden "Create Aeronautics interaction" to "any Sable
+  contraption interaction" in practice; kept here as a record of the
+  decision, not because it's still open.
 
 Resolved and confirmed working via jar inspection this session (M6),
 kept here as a record:
@@ -519,6 +606,18 @@ kept here as a record:
   how contraption physics gets driven) **does not exist anywhere in the
   real API** — the actual entrypoint is `ServerSubLevel.getOrCreateQueuedForceGroup(...)
   .applyAndRecordPointForce(...)`.
+
+Resolved during M7 implementation (the four items the pre-implementation
+spike flagged as unconfirmed — see "External references" above for full
+detail): `getCenterOfMass()`/`applyAndRecordPointForce`'s point+force
+are all in the sub-level's LOCAL frame, not world space;
+`ServerSubLevel.getPlot().getBoundingBox()` is fully public and
+accessible (no fallback needed); `Vector3d`/`Vector3dc`/`Pose3dc` are
+confirmed `org.joml.*`/Sable Companion types respectively; `Pose3dc`
+exposes convenient `Vec3`-overloaded `transformPosition`/
+`transformNormalInverse` methods directly (no need to go through
+`.orientation()` manually). Compiled clean on the first attempt once
+these were resolved.
 
 Resolved and confirmed working via live testing (kept here as a record,
 not because they're still open): `SavedData.Factory`'s deserializer
