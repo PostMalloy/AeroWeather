@@ -105,13 +105,15 @@ standalone, config-tunable, zero external dependencies**. Still planned:
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png`, declared
 in `assets/aeroweather/particles/wind_streak.json`. `WindStreakParticle`
-cycles them on a fixed 100ms-per-frame loop (deliberately not vanilla's
-`setSpriteFromAge`, which spreads all frames evenly across the
-particle's lifetime once with no looping) by indexing `SpriteSet`
-directly: since `SpriteSet` only exposes `get(age, maxAge)` with an
-internal `age*(size-1)/maxAge` formula, calling `get(frame, FRAME_COUNT
-- 1)` resolves to exactly `frame` — the only way to get indexed access
-without a native by-index accessor.
+cycles them exactly once over its own randomized 24-40 tick lifetime via
+vanilla `TextureSheetParticle#setSpriteFromAge` (`SpriteSet.get(age,
+maxAge)` spread evenly across `[0, lifetime]`), so animation speed is
+tied to how long that particular particle happens to live. An earlier
+version used a fixed 100ms-per-frame cadence via a `SpriteSet`
+indexed-access hack (`get(frame, FRAME_COUNT - 1)` resolves to exactly
+`frame`), but that looped 1.5-2.5x before the particle disappeared
+(reading as stuttery) since it wasn't tied to the per-particle lifetime
+— replaced with the lifetime-tied approach above.
 
 A second particle type, `WIND_GUST` (textures
 `gustparticle{1-8}.png`, declared in `wind_gust.json`), shares the
