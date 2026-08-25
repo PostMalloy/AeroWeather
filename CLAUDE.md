@@ -259,13 +259,24 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   `build.gradle`): `compileOnly` for compile-time API access + `localRuntime`
   (not `runtimeOnly`) for the full runtime jar in dev, so consumers of
   AeroWeather don't inherit a hard dependency on Create/Aeronautics/Sable.
+  **Wired in `build.gradle` as of M6** — but only Sable actually needs
+  `compileOnly` (it's the real API surface used); Create and Create
+  Aeronautics are `localRuntime` only, present for dev-client testing but
+  never referenced from compiled code, since Sable's sub-level API is
+  content-agnostic (see "External references" for why AeroWeather
+  doesn't need Aeronautics as a compile dependency at all).
 - Sable Companion is different: it's designed to be embedded
   (`implementation` + `jarJar`), not treated as an optional mod install,
-  since it ships safe no-op defaults itself.
-- `neoforge.mods.toml` should declare Create/Aeronautics/Sable as
-  `type="optional"`, `ordering="AFTER"` dependencies once real modIds are
-  confirmed (see open questions below) — no entry needed for Sable
-  Companion.
+  since it ships safe no-op defaults itself. **Wired as `implementation`
+  as of M6** (its `sable-companion-common-1.21.1` module, pinned to the
+  exact version Sable itself embeds — see "External references"); the
+  `jarJar` half (embedding it into AeroWeather's own published jar) is
+  still open, see below.
+- `neoforge.mods.toml` should declare Create and Sable (not Aeronautics —
+  AeroWeather doesn't link against it, see "External references") as
+  `type="optional"`, `ordering="AFTER"` dependencies using their
+  confirmed real modIds (`create`, `sable`) once M7 implementation
+  begins — no entry needed for Sable Companion.
 - Because Sable's internal physics API carries no third-party stability
   guarantee, wrap the actual force-application call defensively
   (try/catch, degrade to "log once + disable" rather than crash) once
@@ -305,61 +316,183 @@ but don't actively make future extension harder either:
   server+client with RCON) — **checkpoint reached**: mod is fully
   standalone, config-tunable, zero external dependencies, all
   non-Aeronautics requirements delivered
-- M6 — Create Aeronautics research spike: add Create/Aeronautics/Sable as
-  `compileOnly`+`localRuntime`, inspect the actual jars (decompiler /
-  `javap`) to confirm sub-level enumeration, exterior geometry access,
-  and the real force/impulse entrypoint
+- ~~M6 — Create Aeronautics research spike~~ (added Sable as
+  `compileOnly`+`localRuntime` and Sable Companion's common module as
+  `implementation`, all from real resolved maven coordinates;
+  decompiled/`javap`'d the actual Create/Create Aeronautics/Sable jars —
+  confirmed real modIds, the sub-level enumeration/geometry/mass API,
+  and the real force entrypoint, superseding everything this file
+  previously guessed. See "External references" for the full findings
+  and "Open questions" for the one design decision flagged for M7)
 - M7 — Aeronautics integration implementation
 - M8 — Integration testing & tuning against real in-game airship behavior
 
 ## External references
 
+- Create: real modId `create`. Modrinth project `create` (id
+  `LNytGWDc`), e.g. version id `UjX6dr61` for 6.0.10+mc1.21.1. Not a
+  compile dependency for AeroWeather — `localRuntime` only, present for
+  dev-client testing (see Sable below for why).
 - Create Aeronautics ("Simulated Project"):
-  https://github.com/Creators-of-Aeronautics/Simulated-Project — Create
-  addon requiring Create + Sable. Modules: `simulated` (core
-  assembly/redstone/physics-interaction API), `aeronautics` (propellers,
-  hot air, levitation), `offroad` (land vehicles).
+  https://github.com/Creators-of-Aeronautics/Simulated-Project.
+  Distributed as a single "bundled" jar (Modrinth project
+  `create-aeronautics`, id `oWaK0Q19`, e.g. version id `Vzp221Un` for
+  1.3.1+mc1.21.1) that uses NeoForge's `lowcodefml` jar-in-jar container
+  to wrap three independently-modId'd mods — confirmed via each nested
+  jar's own `neoforge.mods.toml`, extracted from `META-INF/jarjar/*.jar`
+  inside the bundled jar:
+  - `simulated` (Create Simulated, pkg `dev.simulated_team.simulated`) —
+    core assembly/redstone blocks; its `api` package is block/sound
+    helpers, not the physics API (that's Sable's, below).
+  - `aeronautics` (Create Aeronautics proper, pkg `dev.eriksonn.aeronautics`)
+    — propellers, hot air balloons, levitite.
+  - `offroad` (Create Offroad, pkg `dev.ryanhcode.offroad`) — land
+    vehicles.
+  None of these three expose the physics API AeroWeather needs — that's
+  entirely Sable's. AeroWeather does **not** need Create or Create
+  Aeronautics as a compile dependency at all (confirmed by compiling
+  sub-level enumeration/force code against Sable + Sable Companion
+  alone, nothing else) — only `localRuntime`, for dev-client testing.
 - Sable: https://github.com/ryanhcode/sable — the Rapier-based physics
-  engine underneath Create Aeronautics. Package root
-  `dev.ryanhcode.sable`. Author describes it as intrusive/mixin-heavy;
-  its raw API (`dev.ryanhcode.sable.api.physics.PhysicsPipeline`) is
-  implementation detail, not a stable third-party surface. Contraption
-  physics is impulse-driven from touch via
-  `dev.ryanhcode.sable.api.event.SubLevelCollisionEvent`.
-- Sable Companion: https://github.com/ryanhcode/sable-companion — the
-  sanctioned lightweight library for third-party mods (meant to be
-  embedded, safe no-op defaults). Maven: `https://maven.ryanhcode.dev/releases`.
-  Confirmed API: `SableCompanion.INSTANCE.getContaining(level, pos)`,
-  `.isInPlotGrid(...)`, `.projectOutOfSubLevel(...)`,
-  `.distanceSquaredWithSubLevels(...)` — position/sub-level detection
-  only, not force application.
+  engine underneath. Real modId `sable`. Modrinth project `sable` (id
+  `T9PomCSv`), e.g. version id `U678xqle` for 2.0.5+mc1.21.1. Package
+  root `dev.ryanhcode.sable`. This is AeroWeather's actual compile
+  dependency (`compileOnly`+`localRuntime`). Confirmed API surface (all
+  under `dev.ryanhcode.sable.api`, decompiled/`javap`'d directly from
+  the real jar, not guessed):
+  - **Enumeration**: `SubLevelContainer.getContainer(ServerLevel) ->
+    ServerSubLevelContainer`, `.getAllSubLevels() ->
+    List<ServerSubLevel>`, or `.queryIntersecting(BoundingBox3dc)` for a
+    spatial query near a point/region.
+  - **Geometry/pose**: `SubLevel.boundingBox() -> BoundingBox3dc` (a
+    global-space AABB — no finer per-face/exterior-surface API exists
+    anywhere in Sable's, Simulated's, or Aeronautics's jars, so the AABB
+    is the practical basis for any exposed-area wind-pressure model, not
+    literal per-voxel face sampling), `.logicalPose()`/`.lastPose() ->
+    Pose3d` (position + orientation).
+  - **Mass**: `ServerSubLevel.getMassTracker() -> MassData` (`getMass()`,
+    `getCenterOfMass()`, inertia tensor) — needed to apply force at a
+    sensible point and get physically plausible acceleration.
+  - **Force application** (the real entrypoint — supersedes this file's
+    old guess about `SubLevelCollisionEvent`, which does not exist
+    anywhere in the real API): `ServerSubLevel.getOrCreateQueuedForceGroup(ForceGroup)
+    -> QueuedForceGroup`, then `.applyAndRecordPointForce(Vector3dc point,
+    Vector3dc force)`. `ForceGroup` is a plain record (`Component name,
+    Component description, int color, boolean defaultDisplayed`) —
+    AeroWeather can construct its own (e.g. a `WIND` group) directly
+    with `new ForceGroup(...)` without touching the built-in
+    `ForceGroups` registry (GRAVITY/DRAG/LEVITATION/BALLOON_LIFT/
+    PROPULSION/LIFT/MAGNETIC_FORCE), which avoids a compile dependency
+    on Veil — confirmed via a compile-time smoke test: referencing
+    `ForceGroups.DRAG.get()` fails to compile without Veil on the
+    classpath (its registry entries are typed as Veil's
+    `RegistrationProvider`/`RegistryObject`), while constructing a raw
+    `ForceGroup` does not. Lower-level alternatives also exist —
+    `RigidBodyHandle.of(ServerSubLevel).applyImpulseAtPoint(Vec3, Vec3)`
+    and raw `PhysicsPipeline.applyImpulse(...)` — but `QueuedForceGroup`
+    is the one built for continuous per-tick forces like drag/wind
+    (rather than one-shot impulses) and is what shows up correctly
+    attributed in Sable's own force debug/visualization tooling.
+  - **Tick hook**: `dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent`
+    (the NeoForge-specific wrapper around the loader-agnostic
+    `SablePrePhysicsTickEvent` interface) **extends
+    `net.neoforged.bus.api.Event`** and is posted on the normal NeoForge
+    event bus — subscribe with a plain `@SubscribeEvent` like any other
+    NeoForge event. Carries `getPhysicsSystem()`/`getTimeStep()` (the
+    physics substep dt, which runs at a different cadence than our 1Hz
+    `WindSimulator` — re-queue the force every physics tick from
+    whatever `WindState` last computed; don't try to raise
+    `WindSimulator`'s own cadence to match).
+  - **Bonus/unplanned discovery — a native ambient-wind hook**:
+    `dev.ryanhcode.sable.api.SubLevelHelper.registerWindProvider(BiFunction<Vector3dc,
+    Level, Vector3dc>)` lets a mod register itself as a source of
+    ambient wind velocity at a position; `.getVelocityRelativeToAir(Level,
+    Vector3dc, Vector3d)` (and the equivalent Companion-facing
+    `SableCompanion.INSTANCE.getVelocityRelativeToAir(...)`, below) is
+    the read side. Confirmed via cross-jar grep that **nothing currently
+    calls the read side** — not Sable internally, not Simulated, not
+    Aeronautics — so it isn't auto-wired into any existing drag/lift
+    calculation. Registering AeroWeather's `WindState` here is cheap
+    ecosystem citizenship (any other mod that later calls the read side
+    picks up our wind for free) but does **not** replace the manual
+    per-sub-level force application above — that's still on us.
+- Sable Companion: https://github.com/ryanhcode/sable-companion. Real
+  API interface `dev.ryanhcode.sable.companion.SableCompanion`
+  (previously only partially confirmed — `getContaining`,
+  `isInPlotGrid`, `projectOutOfSubLevel`, `distanceSquaredWithSubLevels`
+  — now also confirmed to include `getVelocity`/
+  `getVelocityRelativeToAir`, `runIncludingSubLevels`/
+  `findIncludingSubLevels`, and several entity/vehicle sub-level
+  tracking helpers, via `javap` on Sable's own `ActiveSableCompanion`
+  implementation). **Required at compile time regardless of whether
+  AeroWeather calls it directly**: Sable's own public classes reference
+  Companion types in their signatures (e.g. `SubLevel implements
+  dev.ryanhcode.sable.companion.SubLevelAccess`), so
+  `dev.ryanhcode.sable.companion.*` must be resolvable just to compile
+  against `SubLevel`/`ServerSubLevel` at all. Maven:
+  `https://maven.ryanhcode.dev/releases`, group
+  `dev.ryanhcode.sable-companion`, artifact
+  `sable-companion-common-1.21.1` (the loader-agnostic core module —
+  separate sibling artifacts `sable-companion-1.21.1` and
+  `sable-companion-fabric-1.21.1` exist for loader-specific wiring, not
+  needed here). **Pinned to `1.6.0`**, not whatever's newest on the
+  maven (`1.4.0` at time of writing) — confirmed via Sable 2.0.5's own
+  `META-INF/jarjar/metadata.json` that it embeds exactly
+  `sable-companion-common-1.21.1` version `1.6.0`, and its
+  `neoforge.mods.toml` declares itself incompatible with any
+  `sablecompanion` mod install newer than `1.6.0` ("Sable is out of
+  date"), so matching that exact version avoids a binary mismatch.
 - Prior art: "PMWeather Aeronautics compat" — integrates wind by caching
   a sub-level's exterior-surface-patch profile, sampling wind across
   exposed faces with a quadratic pressure model (force ∝ exposed area ×
   wind speed²), summing to net force + torque, and handing that to
-  Sable's physics. This is the intended integration pattern to follow in
-  M6/M7.
-- Modrinth Maven: `https://api.modrinth.com/maven` (use
-  `exclusiveContent`/`includeGroup "maven.modrinth"`; coordinates use
-  Modrinth *version ids*, not semver strings) — fallback for
-  Create/Create Aeronautics/Sable if no dedicated maven is found.
+  Sable's physics. Still the intended shape for M7's actual force
+  model, adapted to the confirmed API above (AABB-based exposed area,
+  not per-face, since no finer geometry API exists) and its
+  `QueuedForceGroup.applyAndRecordPointForce` entrypoint.
+- Modrinth Maven: `https://api.modrinth.com/maven` (wired in
+  `build.gradle` via `exclusiveContent`/`includeGroup "maven.modrinth"`),
+  coordinates `maven.modrinth:<slug>:<version id>` — confirmed working
+  for `sable`/`create`/`create-aeronautics` (version ids above, pinned
+  in `gradle.properties` as `sable_version`/`create_version`/
+  `create_aeronautics_version`).
 - NeoForge docs: https://docs.neoforged.net/
 
 ## Open questions / research spike tracker
 
 Resolve these before relying on them — don't let assumptions calcify:
 
-- Exact in-game modIds for Create, Create Aeronautics, and Sable
-  (Modrinth project slugs are known to differ from the real `modId`).
-- Exact Modrinth version ids (or dedicated maven coordinates, if one
-  exists) for Create/Aeronautics/Sable builds compatible with MC 1.21.1.
-- The real Create Aeronautics/Sable API surface for enumerating
-  sub-levels/contraptions near a point, accessing exterior geometry, and
-  applying force — specifically whether to use
-  `SubLevelCollisionEvent`-style synthetic impulses or call
-  `PhysicsPipeline.applyImpulse()` directly (needs jar inspection, M6).
 - ModDevGradle `2.0.144`'s exact `jarJar` DSL for embedding Sable
-  Companion.
+  Companion into AeroWeather's own published jar (M7 — not needed until
+  AeroWeather actually ships; `implementation` is sufficient for dev
+  builds/testing in the meantime).
+- **Design decision made during M6, flagged for revisiting at M7**:
+  Sable's sub-level API is entirely content-agnostic — nothing
+  distinguishes a Create Aeronautics airship from a Create Offroad
+  truck or any other Sable-based contraption (no "this is an
+  Aeronautics assembly" tag was found anywhere in the Sable or
+  Aeronautics API surface). `AeronauticsWindForceApplier` is planned to
+  apply wind force to **every** Sable sub-level uniformly (simplest, and
+  physically honest — anything airborne and exposed should feel wind
+  regardless of which mod assembled it) and to gate activation on
+  **`sable`** being loaded rather than specifically `aeronautics`
+  (matches the true technical dependency — Sable is literally all
+  AeroWeather compiles/links against). This does technically broaden
+  "Create Aeronautics interaction" to "any Sable contraption
+  interaction" in practice; flagged here rather than silently assumed.
+
+Resolved and confirmed working via jar inspection this session (M6),
+kept here as a record:
+- Real modIds and the module breakdown of the Create Aeronautics
+  "bundled" jar — see "External references" above.
+- Modrinth version ids for MC 1.21.1 NeoForge builds — see "External
+  references" above.
+- The real force/impulse entrypoint, tick hook, and the rest of the
+  confirmed Sable API surface — see "External references" above. In
+  particular, `SubLevelCollisionEvent` (this file's earlier guess for
+  how contraption physics gets driven) **does not exist anywhere in the
+  real API** — the actual entrypoint is `ServerSubLevel.getOrCreateQueuedForceGroup(...)
+  .applyAndRecordPointForce(...)`.
 
 Resolved and confirmed working via live testing (kept here as a record,
 not because they're still open): `SavedData.Factory`'s deserializer
