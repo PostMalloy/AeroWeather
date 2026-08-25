@@ -14,16 +14,14 @@ public final class ClientWindState {
     private static ResourceLocation dimension;
     private static float directionDeg;
     private static float strength;
-    private static boolean gusting;
 
     private ClientWindState() {
     }
 
-    public static void update(ResourceLocation dimension, float directionDeg, float strength, boolean gusting) {
+    public static void update(ResourceLocation dimension, float directionDeg, float strength) {
         ClientWindState.dimension = dimension;
         ClientWindState.directionDeg = directionDeg;
         ClientWindState.strength = strength;
-        ClientWindState.gusting = gusting;
     }
 
     /** The dimension the cached wind applies to, or null if nothing has been received yet. */
@@ -37,9 +35,5 @@ public final class ClientWindState {
 
     public static float strength() {
         return strength;
-    }
-
-    public static boolean isGusting() {
-        return gusting;
     }
 }

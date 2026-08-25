@@ -37,8 +37,9 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * same elevation-adjusted value).
  * <p>
  * A second particle type, {@code WIND_GUST}, uses the identical
- * spawn/rate logic but only while {@link ClientWindState#isGusting()} is
- * true, via its own accumulator so its rate doesn't borrow from or
+ * spawn/rate logic but only once the elevation-adjusted strength exceeds
+ * {@link AeroWeatherClientConfig#GUST_PARTICLE_MIN_STRENGTH} (default
+ * 50/100), via its own accumulator so its rate doesn't borrow from or
  * interfere with the always-on {@code WIND_STREAK} spawning.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
@@ -87,7 +88,8 @@ public final class WindParticleSpawner {
             spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_STREAK.get());
         }
 
-        if (ClientWindState.isGusting()) {
+        float gustMinStrength = (float) AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH.getAsDouble();
+        if (strength > gustMinStrength) {
             gustSpawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
             while (gustSpawnAccumulator >= 1.0F) {
                 gustSpawnAccumulator -= 1.0F;

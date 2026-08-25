@@ -26,7 +26,8 @@ import net.neoforged.api.distmarker.OnlyIn;
  * spreads all frames evenly across the lifetime once with no looping.
  * Shared by both registered particle types — {@code wind_streak}
  * (assets/aeroweather/particles/wind_streak.json, spawned continuously)
- * and {@code wind_gust} (wind_gust.json, spawned only while gusting) —
+ * and {@code wind_gust} (wind_gust.json, spawned only above a strength
+ * threshold) —
  * since they differ only in which texture set their {@link SpriteSet}
  * resolves to; all orientation/rendering/lifecycle behavior is identical.
  * <p>

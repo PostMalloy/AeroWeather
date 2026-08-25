@@ -21,6 +21,7 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue MAX_SPEED;
     public static final ModConfigSpec.DoubleValue DIRECTION_JITTER_DEG;
     public static final ModConfigSpec.BooleanValue OUTDOORS_ONLY;
+    public static final ModConfigSpec.DoubleValue GUST_PARTICLE_MIN_STRENGTH;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -56,6 +57,9 @@ public final class AeroWeatherClientConfig {
         OUTDOORS_ONLY = builder
                 .comment("Whether particles only spawn where they can see the sky (skips spawns inside/under terrain and buildings).")
                 .define("outdoorsOnly", true);
+        GUST_PARTICLE_MIN_STRENGTH = builder
+                .comment("Minimum elevation-adjusted wind strength (0-100 scale) required for the WIND_GUST particle type to spawn, on top of the always-on WIND_STREAK particles.")
+                .defineInRange("gustParticleMinStrength", 50.0, 0.0, 100.0);
         builder.pop();
 
         SPEC = builder.build();

@@ -11,6 +11,6 @@ final class ClientPayloadHandler {
     }
 
     static void handleWindSync(ClientboundWindSyncPayload payload, IPayloadContext context) {
-        ClientWindState.update(payload.dimension(), payload.directionDeg(), payload.strength(), payload.gusting());
+        ClientWindState.update(payload.dimension(), payload.directionDeg(), payload.strength());
     }
 }
