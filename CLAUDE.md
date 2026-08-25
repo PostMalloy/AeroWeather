@@ -89,7 +89,7 @@ integration/
   ModCompat.java                      ModList.get().isLoaded(modId) + SABLE_MODID constant; zero Sable imports
   aeronautics/
     AeroWeatherBlockTags.java         TagKey<Block> ENVELOPE/LEVITITE/WINDMILL_SAILS; pure data tags, always safe to classload
-    WindForceApplier.java             interface: start() (NOT a per-tick method - the real applier drives
+    WindForceApplier.java             interface: start(IEventBus modEventBus) (NOT a per-tick method - the real applier drives
                                        itself off Sable's own physics-tick event once started)
     NoopWindForceApplier.java         start() no-op
     AeronauticsWindForceApplier.java  ONLY class allowed to reference Create/Aeronautics/Sable types directly
@@ -281,6 +281,17 @@ data, referenced via `AeroWeatherBlockTags`' `TagKey<Block>` constants
 with zero compile dependency on Aeronautics/Create Java classes,
 preserving M6's Sable-only compile footprint.
 
+`WIND_FORCE_GROUP` (the `ForceGroup` passed to `getOrCreateQueuedForceGroup`)
+is registered into Sable's own `ForceGroups.REGISTRY` via a standard
+`RegisterEvent` listener on the mod event bus — see "External
+references" for why this is required (an unregistered `ForceGroup`
+crashes Create Aeronautics' contraption diagram tool when it tries to
+network-encode it) and why it doesn't need Veil despite `ForceGroups`'
+built-in constants being Veil-typed. This is also what makes the wind
+force actually show up on that diagram, alongside Sable's own
+gravity/drag/lift entries — `defaultDisplayed = true` on the
+`ForceGroup` controls that.
+
 ## Command reference
 
 ```
@@ -444,15 +455,29 @@ but don't actively make future extension harder either:
     -> QueuedForceGroup`, then `.applyAndRecordPointForce(Vector3dc point,
     Vector3dc force)`. `ForceGroup` is a plain record (`Component name,
     Component description, int color, boolean defaultDisplayed`) —
-    AeroWeather can construct its own (e.g. a `WIND` group) directly
-    with `new ForceGroup(...)` without touching the built-in
-    `ForceGroups` registry (GRAVITY/DRAG/LEVITATION/BALLOON_LIFT/
-    PROPULSION/LIFT/MAGNETIC_FORCE), which avoids a compile dependency
-    on Veil — confirmed via a compile-time smoke test: referencing
+    constructing one directly (`new ForceGroup(...)`) doesn't itself
+    need Veil (confirmed via a compile-time smoke test: referencing
     `ForceGroups.DRAG.get()` fails to compile without Veil on the
-    classpath (its registry entries are typed as Veil's
-    `RegistrationProvider`/`RegistryObject`), while constructing a raw
-    `ForceGroup` does not. Lower-level alternatives also exist —
+    classpath, since the built-in constants are typed as Veil's
+    `RegistrationProvider`/`RegistryObject`, but a raw `ForceGroup`
+    doesn't touch those types). **However, an unregistered `ForceGroup`
+    is not actually usable in practice** — confirmed live: Create
+    Aeronautics' contraption diagram tool crashes the client connection
+    (`NullPointerException` deep in encoding a `simulated:diagram_data`
+    payload, inside an `Object2ObjectMap<ForceGroup, QueuedForceGroup>`
+    codec) when it tries to network-encode a sub-level's queued force
+    groups by registry id and finds none for an unregistered one. The
+    fix (and *also* what makes the force show up correctly on that same
+    diagram) is registering the `ForceGroup` into `ForceGroups.REGISTRY`
+    — but via the **standard NeoForge `RegisterEvent` pattern**
+    (`event.register(ForceGroups.REGISTRY_KEY, id, supplier)` from a
+    mod-event-bus listener), not Veil's `RegistrationProvider`.
+    Confirmed via another compile-time smoke test that merely
+    referencing `ForceGroups.REGISTRY`/`REGISTRY_KEY` (both plain
+    vanilla `Registry`/`ResourceKey` types) does **not** require Veil on
+    the classpath, unlike referencing the individual built-in constants
+    — so registering AeroWeather's own force group still needs zero
+    Veil compile dependency. Lower-level alternatives also exist —
     `RigidBodyHandle.of(ServerSubLevel).applyImpulseAtPoint(Vec3, Vec3)`
     and raw `PhysicsPipeline.applyImpulse(...)` — but `QueuedForceGroup`
     is the one built for continuous per-tick forces like drag/wind
@@ -489,14 +514,21 @@ but don't actively make future extension harder either:
     installed, violating the isolation rule below. `AeronauticsWindForceApplier`
     instead registers manually
     (`NeoForge.EVENT_BUS.addListener(EventClass.class, this::handler)`)
-    from inside `start()`, which itself only ever runs after the
-    `ModCompat` check passed.
+    from inside `start(IEventBus modEventBus)`, which itself only ever
+    runs after the `ModCompat` check passed. `start` takes the mod
+    event bus (not just relying on `NeoForge.EVENT_BUS`) specifically
+    because registering the `ForceGroup` (see above) needs a
+    `RegisterEvent` listener, which only fires on that bus — still a
+    plain manual `addListener` call, same reasoning as the rest.
   - **Sub-level assembly hook**: `SubLevelContainer.addObserver(SubLevelObserver)`
     (registered from `ForgeSableSubLevelContainerReadyEvent`, also a
-    real NeoForge `Event`) — `onSubLevelAdded(SubLevel)` fires once per
-    assembled contraption and is where `AeronauticsWindForceApplier`
-    does its one-time lift-block-ratio scan, mirroring exactly when
-    Sable itself rebuilds `buildMassTracker()`.
+    real NeoForge `Event`) — `onSubLevelAdded(SubLevel)`/`onSubLevelRemoved(...)`
+    fire once per assembled/disassembled contraption. `AeronauticsWindForceApplier`
+    only overrides `onSubLevelRemoved` (to evict its lift-profile cache
+    entry) — see the M7 design section below for why the lift-ratio
+    scan itself is *not* done here despite `onSubLevelAdded` looking
+    like the obvious hook (mirroring Sable's own `buildMassTracker()`
+    trigger seemed right in theory, but empirically fires too early).
   - **Block iteration for the local bounding box**: `ServerSubLevel.getPlot()
     -> ServerLevelPlot`, `.getBoundingBox() -> BoundingBox3ic` (from
     Sable Companion's `dev.ryanhcode.sable.companion.math` package,
