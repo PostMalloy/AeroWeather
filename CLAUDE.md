@@ -403,19 +403,45 @@ but don't actively make future extension harder either:
     `WindSimulator` — re-queue the force every physics tick from
     whatever `WindState` last computed; don't try to raise
     `WindSimulator`'s own cadence to match).
-  - **Bonus/unplanned discovery — a native ambient-wind hook**:
-    `dev.ryanhcode.sable.api.SubLevelHelper.registerWindProvider(BiFunction<Vector3dc,
+  - **Bonus discovery — a native ambient-wind hook, but internal/unstable
+    and currently a no-op everywhere**: `dev.ryanhcode.sable.api.SubLevelHelper.registerWindProvider(BiFunction<Vector3dc,
     Level, Vector3dc>)` lets a mod register itself as a source of
     ambient wind velocity at a position; `.getVelocityRelativeToAir(Level,
-    Vector3dc, Vector3d)` (and the equivalent Companion-facing
-    `SableCompanion.INSTANCE.getVelocityRelativeToAir(...)`, below) is
-    the read side. Confirmed via cross-jar grep that **nothing currently
-    calls the read side** — not Sable internally, not Simulated, not
-    Aeronautics — so it isn't auto-wired into any existing drag/lift
-    calculation. Registering AeroWeather's `WindState` here is cheap
-    ecosystem citizenship (any other mod that later calls the read side
-    picks up our wind for free) but does **not** replace the manual
-    per-sub-level force application above — that's still on us.
+    Vector3dc, Vector3d)` is the read side. Decompiled (not just
+    `javap`'d) to confirm the actual mechanism: `getVelocityRelativeToAir`
+    computes the queried point's true physics velocity (via
+    `RigidBodyHandle`'s linear+angular velocity, correctly accounting for
+    rotation — a point on a spinning propeller arm reads faster than the
+    hull's center of mass) and subtracts every registered provider's
+    vector from it — a coherent, correctly-implemented relative-airspeed
+    calculation, not leftover/vestigial code. However: **the whole
+    `SubLevelHelper` class is annotated `@ApiStatus.Internal`**, unlike
+    every other class this section relies on for force application
+    (`SubLevelContainer`/`ServerSubLevelContainer`/`RigidBodyHandle`/
+    `QueuedForceGroup`/`ForceGroup` — none of those carry that
+    annotation) — the author is explicitly flagging it as not a
+    committed public surface. Cross-jar grep across all four first-party
+    jars (Sable, Simulated, Aeronautics, Offroad) found **zero call
+    sites** for `getVelocityRelativeToAir`/`registerWindProvider`/
+    `windProviders` anywhere except `SubLevelHelper` itself and one
+    pass-through in `ActiveSableCompanion` — nothing today reads the
+    result, so registering a provider would currently have zero visible
+    effect on any vanilla Aeronautics/Offroad contraption; it isn't
+    auto-wired into any drag/lift calculation. Asymmetric API surface:
+    the *read* side is reachable through the stable, non-`@Internal`
+    `SableCompanion.INSTANCE.getVelocityRelativeToAir(...)` (Companion
+    just delegates to the internal method), but the *write* side
+    (`registerWindProvider`) has no Companion equivalent — only reachable
+    by calling the internal class directly. **Recommendation for M7**:
+    register anyway (cheap, isolated to one call site in
+    `AeronauticsWindForceApplier`, already wrapped in the try/catch
+    CLAUDE.md's conventions call for, so a future rename/removal fails in
+    one place already being defended) as free ecosystem citizenship and
+    optionally as our own source of correct per-point relative-airspeed
+    (via the stable Companion read side) instead of a center-of-mass
+    approximation — but the actual force application must keep using the
+    confirmed-stable `QueuedForceGroup` path regardless; this hook does
+    **not** replace that, it only makes wind data queryable.
 - Sable Companion: https://github.com/ryanhcode/sable-companion. Real
   API interface `dev.ryanhcode.sable.companion.SableCompanion`
   (previously only partially confirmed — `getContaining`,
