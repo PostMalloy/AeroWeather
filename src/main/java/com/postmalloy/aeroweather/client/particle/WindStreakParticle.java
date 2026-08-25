@@ -20,11 +20,15 @@ import net.neoforged.api.distmarker.OnlyIn;
 
 /**
  * A single wisp used to show wind direction. Cycles through its 8
- * texture frames (assets/aeroweather/particles/wind_streak.json) on a
- * fixed 200ms-per-frame flipbook loop, independent of the particle's own
- * lifetime — this deliberately does NOT use the vanilla
- * {@link TextureSheetParticle#setSpriteFromAge} behavior, which spreads
- * all frames evenly across the lifetime once with no looping.
+ * texture frames on a fixed 100ms-per-frame flipbook loop, independent
+ * of the particle's own lifetime — this deliberately does NOT use the
+ * vanilla {@link TextureSheetParticle#setSpriteFromAge} behavior, which
+ * spreads all frames evenly across the lifetime once with no looping.
+ * Shared by both registered particle types — {@code wind_streak}
+ * (assets/aeroweather/particles/wind_streak.json, spawned continuously)
+ * and {@code wind_gust} (wind_gust.json, spawned only while gusting) —
+ * since they differ only in which texture set their {@link SpriteSet}
+ * resolves to; all orientation/rendering/lifecycle behavior is identical.
  * <p>
  * Orientation is a vertical card, fixed in world space, computed once at
  * spawn from the travel direction and never touched again — no camera
@@ -42,7 +46,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 @OnlyIn(Dist.CLIENT)
 public class WindStreakParticle extends TextureSheetParticle {
     private static final int FRAME_COUNT = 8;
-    private static final int TICKS_PER_FRAME = 4; // 200ms at 20 ticks/sec
+    private static final int TICKS_PER_FRAME = 2; // 100ms at 20 ticks/sec
 
     private final SpriteSet sprites;
     private final Quaternionf orientation;

@@ -11,6 +11,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.neoforged.api.distmarker.Dist;
@@ -34,10 +35,16 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * in the common config instead (it's server-authoritative - see
  * {@code AeroWeatherCommand}'s "wind info" output, which reports the
  * same elevation-adjusted value).
+ * <p>
+ * A second particle type, {@code WIND_GUST}, uses the identical
+ * spawn/rate logic but only while {@link ClientWindState#isGusting()} is
+ * true, via its own accumulator so its rate doesn't borrow from or
+ * interfere with the always-on {@code WIND_STREAK} spawning.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
     private static float spawnAccumulator;
+    private static float gustSpawnAccumulator;
 
     private WindParticleSpawner() {
     }
@@ -77,11 +84,21 @@ public final class WindParticleSpawner {
         spawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
         while (spawnAccumulator >= 1.0F) {
             spawnAccumulator -= 1.0F;
-            spawnOne(level, player, ClientWindState.directionDeg(), strength);
+            spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_STREAK.get());
+        }
+
+        if (ClientWindState.isGusting()) {
+            gustSpawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
+            while (gustSpawnAccumulator >= 1.0F) {
+                gustSpawnAccumulator -= 1.0F;
+                spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_GUST.get());
+            }
+        } else {
+            gustSpawnAccumulator = 0.0F;
         }
     }
 
-    private static void spawnOne(ClientLevel level, LocalPlayer player, float directionDeg, float strength) {
+    private static void spawnOne(ClientLevel level, LocalPlayer player, float directionDeg, float strength, SimpleParticleType particleType) {
         RandomSource random = level.random;
 
         float minRadius = (float) AeroWeatherClientConfig.MIN_RADIUS.getAsDouble();
@@ -115,6 +132,6 @@ public final class WindParticleSpawner {
         double xd = travelX * speed;
         double zd = travelZ * speed;
 
-        level.addParticle(AeroWeatherParticles.WIND_STREAK.get(), x, y, z, xd, 0.0, zd);
+        level.addParticle(particleType, x, y, z, xd, 0.0, zd);
     }
 }

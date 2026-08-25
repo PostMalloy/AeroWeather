@@ -14,7 +14,7 @@ import net.minecraft.resources.ResourceLocation;
  * change/respawn, command overrides, and periodic delta-threshold
  * updates — never every tick).
  */
-public record ClientboundWindSyncPayload(ResourceLocation dimension, float directionDeg, float strength) implements CustomPacketPayload {
+public record ClientboundWindSyncPayload(ResourceLocation dimension, float directionDeg, float strength, boolean gusting) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ClientboundWindSyncPayload> TYPE =
             new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(AeroWeather.MODID, "wind_sync"));
 
@@ -22,6 +22,7 @@ public record ClientboundWindSyncPayload(ResourceLocation dimension, float direc
             ResourceLocation.STREAM_CODEC, ClientboundWindSyncPayload::dimension,
             ByteBufCodecs.FLOAT, ClientboundWindSyncPayload::directionDeg,
             ByteBufCodecs.FLOAT, ClientboundWindSyncPayload::strength,
+            ByteBufCodecs.BOOL, ClientboundWindSyncPayload::gusting,
             ClientboundWindSyncPayload::new);
 
     @Override

@@ -19,9 +19,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * Decides when to broadcast wind updates to clients: immediately on
  * command overrides and full per-player syncs (join/dimension
  * change/respawn), otherwise only when the effective wind has drifted
- * past a small threshold or a heartbeat interval has elapsed — never
- * every tick. Thresholds come from {@link AeroWeatherCommonConfig}. See
- * CLAUDE.md's "Wind system design" for the model.
+ * past a small threshold, a gust has started or stopped (so gust-only
+ * particles react promptly rather than waiting on the heartbeat), or a
+ * heartbeat interval has elapsed — never every tick. Thresholds come
+ * from {@link AeroWeatherCommonConfig}. See CLAUDE.md's "Wind system
+ * design" for the model.
  */
 public final class WindSync {
     private static final Map<ResourceKey<Level>, Tracker> TRACKERS = new HashMap<>();
@@ -41,9 +43,10 @@ public final class WindSync {
 
         boolean directionChanged = WindDirection.angularDifference(wind.directionDeg(), tracker.directionDeg) > directionThreshold;
         boolean strengthChanged = Math.abs(wind.strength() - tracker.strength) >= strengthThreshold;
+        boolean gustingChanged = wind.isGusting() != tracker.gusting;
         boolean heartbeatElapsed = now - tracker.lastSyncTick >= heartbeatTicks;
 
-        if (tracker.lastSyncTick < 0 || directionChanged || strengthChanged || heartbeatElapsed) {
+        if (tracker.lastSyncTick < 0 || directionChanged || strengthChanged || gustingChanged || heartbeatElapsed) {
             broadcast(level, wind);
             tracker.update(wind, now);
         }
@@ -66,17 +69,19 @@ public final class WindSync {
     }
 
     private static ClientboundWindSyncPayload payloadFor(ServerLevel level, WindState wind) {
-        return new ClientboundWindSyncPayload(level.dimension().location(), wind.directionDeg(), wind.strength());
+        return new ClientboundWindSyncPayload(level.dimension().location(), wind.directionDeg(), wind.strength(), wind.isGusting());
     }
 
     private static final class Tracker {
         private float directionDeg;
         private float strength;
+        private boolean gusting;
         private long lastSyncTick = -1;
 
         private void update(WindState wind, long tick) {
             this.directionDeg = wind.directionDeg();
             this.strength = wind.strength();
+            this.gusting = wind.isGusting();
             this.lastSyncTick = tick;
         }
     }

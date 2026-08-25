@@ -160,6 +160,11 @@ public final class WindState {
         return weatherBoost;
     }
 
+    /** Whether a gust is currently active (decaying additive spike layered on top of the drift value). */
+    public boolean isGusting() {
+        return gustStepsRemaining > 0;
+    }
+
     public CompoundTag save(CompoundTag tag) {
         tag.putFloat("BaseDirection", baseDirectionDeg);
         tag.putFloat("TargetDirection", targetDirectionDeg);
