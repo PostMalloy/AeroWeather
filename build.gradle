@@ -28,7 +28,27 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // Modrinth-hosted soft dependencies (Sable, Create, Create Aeronautics — see M6 in
+    // CLAUDE.md's roadmap). Coordinates use Modrinth version IDs, not semver strings.
+    // exclusiveContent keeps this repo from being consulted for anything outside that
+    // group, so it can't shadow/slow down resolution of normal Maven Central artifacts.
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+    // Sable Companion isn't on Modrinth — it's the sanctioned lightweight library meant to
+    // be embedded by third-party mods (see CLAUDE.md's soft-dependency conventions).
+    maven {
+        name = "ryanhcode"
+        url = "https://maven.ryanhcode.dev/releases"
+    }
 }
 
 base {
@@ -116,6 +136,28 @@ configurations {
 }
 
 dependencies {
+    // Create Aeronautics wind integration (M6 research spike): AeronauticsWindForceApplier
+    // is the only class allowed to reference these types (see CLAUDE.md's isolation rule).
+    // Sable is compileOnly + localRuntime since it's the actual API surface used (sub-level
+    // enumeration, mass/bounding-box, and the queued-force entrypoint — see CLAUDE.md's
+    // "External references" for the confirmed API). Create and Create Aeronautics are
+    // localRuntime only, present for dev-client testing but never referenced from compiled
+    // code, since Sable's own sub-level API is content-agnostic (it doesn't distinguish an
+    // Aeronautics airship from any other Sable-based contraption).
+    compileOnly "maven.modrinth:sable:${sable_version}"
+    localRuntime "maven.modrinth:sable:${sable_version}"
+    localRuntime "maven.modrinth:create:${create_version}"
+    localRuntime "maven.modrinth:create-aeronautics:${create_aeronautics_version}"
+
+    // Sable Companion's "common" module leaks into Sable's own public API signatures (e.g.
+    // SubLevel implements SubLevelAccess), so it's required at compile time even before we
+    // write any code that calls it directly. `implementation` (not compileOnly) matches its
+    // "designed to be embedded" nature (see CLAUDE.md) — it ships safe no-op defaults itself,
+    // so unlike Sable/Create/Aeronautics it's fine to always be present, not gated behind a
+    // ModCompat check. jarJar-embedding it into the published mod jar is still an open
+    // question (ModDevGradle 2.0.144's exact jarJar DSL, per CLAUDE.md) — deferred to M7.
+    implementation "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${sable_companion_version}"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
