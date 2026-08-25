@@ -20,16 +20,18 @@ import net.neoforged.api.distmarker.OnlyIn;
 
 /**
  * A single wisp used to show wind direction. Cycles through its 8
- * texture frames on a fixed 100ms-per-frame flipbook loop, independent
- * of the particle's own lifetime — this deliberately does NOT use the
- * vanilla {@link TextureSheetParticle#setSpriteFromAge} behavior, which
- * spreads all frames evenly across the lifetime once with no looping.
- * Shared by both registered particle types — {@code wind_streak}
+ * texture frames exactly once over the particle's own (randomized,
+ * 24-40 tick) lifetime, via vanilla {@link TextureSheetParticle#setSpriteFromAge},
+ * so the animation speed is tied to how long that particular particle
+ * happens to live rather than a fixed cadence — a fixed per-frame
+ * duration was tried first but looped 1.5-2.5x before the particle
+ * disappeared, which read as stuttery. Shared by both registered
+ * particle types — {@code wind_streak}
  * (assets/aeroweather/particles/wind_streak.json, spawned continuously)
  * and {@code wind_gust} (wind_gust.json, spawned only above a strength
- * threshold) —
- * since they differ only in which texture set their {@link SpriteSet}
- * resolves to; all orientation/rendering/lifecycle behavior is identical.
+ * threshold) — since they differ only in which texture set their
+ * {@link SpriteSet} resolves to; all orientation/rendering/lifecycle
+ * behavior is identical.
  * <p>
  * Orientation is a vertical card, fixed in world space, computed once at
  * spawn from the travel direction and never touched again — no camera
@@ -46,9 +48,6 @@ import net.neoforged.api.distmarker.OnlyIn;
  */
 @OnlyIn(Dist.CLIENT)
 public class WindStreakParticle extends TextureSheetParticle {
-    private static final int FRAME_COUNT = 8;
-    private static final int TICKS_PER_FRAME = 2; // 100ms at 20 ticks/sec
-
     private final SpriteSet sprites;
     private final Quaternionf orientation;
     private final boolean mirrored;
@@ -70,7 +69,7 @@ public class WindStreakParticle extends TextureSheetParticle {
         this.friction = 1.0F;
         this.quadSize = 0.4F + this.random.nextFloat() * 0.3F;
         this.lifetime = 24 + this.random.nextInt(17); // 24-40 ticks
-        updateSprite();
+        this.setSpriteFromAge(this.sprites);
         // Set the correct age=0 alpha immediately - without this, the particle renders
         // at the default alpha (1.0, fully opaque) for however many frames occur before
         // its first tick() call (which is what actually applies fadeAlpha()), then jumps
@@ -171,15 +170,8 @@ public class WindStreakParticle extends TextureSheetParticle {
             return;
         }
         this.move(this.xd, this.yd, this.zd);
-        updateSprite();
+        this.setSpriteFromAge(this.sprites);
         this.setAlpha(fadeAlpha());
-    }
-
-    private void updateSprite() {
-        int frame = (this.age / TICKS_PER_FRAME) % FRAME_COUNT;
-        // SpriteSet only exposes get(age, maxAge) with an internal age*(size-1)/maxAge formula;
-        // passing maxAge = FRAME_COUNT - 1 makes that resolve to exactly `frame`, giving indexed access.
-        this.setSprite(this.sprites.get(frame, FRAME_COUNT - 1));
     }
 
     private float fadeAlpha() {
