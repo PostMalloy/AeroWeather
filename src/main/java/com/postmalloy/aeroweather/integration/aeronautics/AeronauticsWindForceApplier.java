@@ -66,7 +66,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             Component.translatable("aeroweather.aeronautics.force_group.description"),
             0x55AAFF, true);
 
-    /** Lift ratio + local half-extents, cached once per sub-level at assembly. Keyed by SubLevel.getUniqueId(). */
+    /** Lift ratio + local half-extents, cached once per sub-level on first force application. Keyed by SubLevel.getUniqueId(). */
     private final Map<UUID, LiftProfile> liftProfiles = new ConcurrentHashMap<>();
     /** Resolves which ServerLevel a ForgeSablePrePhysicsTickEvent belongs to. */
     private final Map<SubLevelPhysicsSystem, ServerLevel> levelsByPhysicsSystem = new HashMap<>();
@@ -89,23 +89,22 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         container.addObserver(this);
     }
 
-    /** One-time lift-ratio/extents computation, mirroring Sable's own buildMassTracker() cadence exactly. */
-    @Override
-    public void onSubLevelAdded(SubLevel subLevel) {
-        if (disabled || !(subLevel instanceof ServerSubLevel serverSubLevel)) {
-            return;
-        }
-        try {
-            liftProfiles.put(subLevel.getUniqueId(), buildLiftProfile(serverSubLevel));
-        } catch (Throwable t) {
-            AeroWeather.LOGGER.error("Failed to compute a lift profile for a Sable sub-level; disabling AeroWeather's wind force.", t);
-            disabled = true;
-        }
-    }
-
     @Override
     public void onSubLevelRemoved(SubLevel subLevel, SubLevelRemovalReason reason) {
         liftProfiles.remove(subLevel.getUniqueId());
+    }
+
+    /**
+     * Computed lazily on first use rather than eagerly in onSubLevelAdded: that
+     * notification fires before the contraption's blocks are actually copied
+     * into the sub-level's storage (confirmed live - it saw a bare 2x2x2 box),
+     * so an eager scan there permanently caches an empty snapshot. By the time
+     * a sub-level is actually reaching applyWindForce (i.e. participating in
+     * real physics ticks), its blocks are guaranteed populated. Still computed
+     * and cached exactly once per sub-level, matching the original intent.
+     */
+    private LiftProfile getOrBuildLiftProfile(ServerSubLevel subLevel) {
+        return liftProfiles.computeIfAbsent(subLevel.getUniqueId(), id -> buildLiftProfile(subLevel));
     }
 
     private LiftProfile buildLiftProfile(ServerSubLevel subLevel) {
@@ -168,8 +167,8 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
     }
 
     private void applyWindForce(ServerSubLevel subLevel, ServerLevel level, WindState wind) {
-        LiftProfile profile = liftProfiles.get(subLevel.getUniqueId());
-        if (profile == null || profile.liftRatio() <= 0.0) {
+        LiftProfile profile = getOrBuildLiftProfile(subLevel);
+        if (profile.liftRatio() <= 0.0) {
             return;
         }
 
@@ -211,6 +210,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
 
         double magnitude = AeroWeatherCommonConfig.AERONAUTICS_PRESSURE_COEFFICIENT.getAsDouble()
                 * sectionalArea * ((double) adjustedStrength * adjustedStrength) * profile.liftRatio();
+        magnitude *= oscillationMultiplier(level);
         magnitude = Math.min(magnitude, AeroWeatherCommonConfig.AERONAUTICS_MAX_FORCE.getAsDouble());
         if (magnitude <= 0.0) {
             return;
@@ -219,6 +219,20 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         Vector3d force = new Vector3d(localWindDirection).mul(magnitude);
         QueuedForceGroup queued = subLevel.getOrCreateQueuedForceGroup(WIND_FORCE_GROUP);
         queued.applyAndRecordPointForce(new Vector3d(centerOfMass), force);
+    }
+
+    /**
+     * A subtle sinusoidal ripple on top of the base force (e.g. +/-5% every 2s
+     * by default) - not a separate force, just a slow multiplier so the push
+     * doesn't feel perfectly static. Phased off the level's game time (not
+     * accumulated substep dt) so it stays stable regardless of how many
+     * physics substeps run per game tick.
+     */
+    private static double oscillationMultiplier(ServerLevel level) {
+        double amplitude = AeroWeatherCommonConfig.AERONAUTICS_OSCILLATION_AMPLITUDE.getAsDouble();
+        double periodSeconds = AeroWeatherCommonConfig.AERONAUTICS_OSCILLATION_PERIOD_SECONDS.getAsDouble();
+        double phase = (level.getGameTime() / 20.0) / periodSeconds;
+        return 1.0 + amplitude * Math.sin(2.0 * Math.PI * phase);
     }
 
     private record LiftProfile(double liftRatio, double halfExtentX, double halfExtentY, double halfExtentZ) {

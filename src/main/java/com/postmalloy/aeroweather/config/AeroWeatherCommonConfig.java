@@ -41,6 +41,8 @@ public final class AeroWeatherCommonConfig {
 
     public static final ModConfigSpec.DoubleValue AERONAUTICS_PRESSURE_COEFFICIENT;
     public static final ModConfigSpec.DoubleValue AERONAUTICS_MAX_FORCE;
+    public static final ModConfigSpec.DoubleValue AERONAUTICS_OSCILLATION_AMPLITUDE;
+    public static final ModConfigSpec.DoubleValue AERONAUTICS_OSCILLATION_PERIOD_SECONDS;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -131,16 +133,22 @@ public final class AeroWeatherCommonConfig {
 
         builder.comment(
                 "Tuning for the wind force applied to Create Aeronautics / Sable contraptions (M7).",
-                "Force = pressureCoefficient * sectionalArea * windSpeed^2 * liftRatio, applied at",
-                "the contraption's center of mass. Requires Sable to be installed; has no effect",
-                "otherwise."
+                "Force = pressureCoefficient * sectionalArea * windSpeed^2 * liftRatio, then eased by",
+                "a slow oscillation, applied at the contraption's center of mass. Requires Sable to be",
+                "installed; has no effect otherwise."
         ).push("aeronautics");
         AERONAUTICS_PRESSURE_COEFFICIENT = builder
                 .comment("Scales sectional area * elevation-adjusted wind strength^2 into a force magnitude.")
-                .defineInRange("pressureCoefficient", 0.01, 0.0, 1000.0);
+                .defineInRange("pressureCoefficient", 0.0002, 0.0, 1000.0);
         AERONAUTICS_MAX_FORCE = builder
                 .comment("Safety clamp on the computed force magnitude, regardless of contraption size or wind strength.")
                 .defineInRange("maxForce", 5000.0, 0.0, 1000000.0);
+        AERONAUTICS_OSCILLATION_AMPLITUDE = builder
+                .comment("Fractional force oscillation (e.g. 0.05 = force varies +/-5%) - a subtle gust-like ripple, not a separate force.")
+                .defineInRange("oscillationAmplitude", 0.05, 0.0, 1.0);
+        AERONAUTICS_OSCILLATION_PERIOD_SECONDS = builder
+                .comment("Seconds for one full oscillation cycle.")
+                .defineInRange("oscillationPeriodSeconds", 2.0, 0.1, 600.0);
         builder.pop();
 
         SPEC = builder.build();
