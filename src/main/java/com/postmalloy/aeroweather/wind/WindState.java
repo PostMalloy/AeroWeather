@@ -14,12 +14,16 @@ import net.minecraft.util.RandomSource;
  * <p>
  * Natural (non-overridden) strength is additionally capped per weather
  * tier - clear/rain/thunder each have their own ceiling, thunderstorms
- * highest - applied after drift/gust/weatherBoost are summed, so it acts
- * as an absolute ceiling regardless of what's contributing to the total.
- * This is separate from (and layered on top of) the elevation-based
- * scaling in {@link WindHeightScaling}, which is applied downstream by
- * whatever samples wind at a specific position - the cap here bounds the
- * base 0-100 value, not the elevation-adjusted one.
+ * highest. This is a maximum, not a fixed value: the drift target itself
+ * is bounded by the current tier's cap (so baseStrength keeps varying
+ * naturally below it via the normal random walk, rather than wandering
+ * above and then sitting pinned at the cap until it happens to drift back
+ * down), and the final drift+gust+weatherBoost sum is also capped as a
+ * hard ceiling regardless of what's contributing to the total (e.g. a
+ * gust spike). This is separate from (and layered on top of) the
+ * elevation-based scaling in {@link WindHeightScaling}, which is applied
+ * downstream by whatever samples wind at a specific position - the cap
+ * here bounds the base 0-100 value, not the elevation-adjusted one.
  * <p>
  * Simulation tuning comes from {@link AeroWeatherCommonConfig}, read
  * fresh each simulation step (once/second) rather than cached, since
@@ -74,7 +78,11 @@ public final class WindState {
 
         if (stepsUntilRetarget <= 0) {
             targetDirectionDeg = WindDirection.normalizeDegrees(baseDirectionDeg + randomRange(random, -maxDirectionDelta, maxDirectionDelta));
-            targetStrength = clampStrength(baseStrength + randomRange(random, -maxStrengthDelta, maxStrengthDelta));
+            // Capped to the current weather tier's ceiling (not just [0,100]) so the drift target
+            // itself stays bounded and baseStrength keeps varying naturally below the cap, rather
+            // than wandering above it via the unbounded random walk and then sitting pinned at the
+            // cap for a whole retarget cycle - which reads as "stuck at a constant", not "capped".
+            targetStrength = Math.min(clampStrength(baseStrength + randomRange(random, -maxStrengthDelta, maxStrengthDelta)), currentStrengthCap());
             // Config is expressed in seconds; one simulation step is one second (WindSimulator's 20-tick cadence).
             int minSteps = AeroWeatherCommonConfig.DRIFT_RETARGET_MIN_SECONDS.get();
             int maxSteps = AeroWeatherCommonConfig.DRIFT_RETARGET_MAX_SECONDS.get();
