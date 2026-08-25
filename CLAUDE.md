@@ -251,16 +251,23 @@ Force formula and where each input comes from:
 | Input | Source | Cached or per-tick |
 |---|---|---|
 | Sectional area | Closed-form box-silhouette formula (`4 * (hx*hy*abs(dz) + hy*hz*abs(dx) + hx*hz*abs(dy))`) against cached local half-extents + a fresh per-tick local wind direction | Half-extents cached once at assembly; direction/area recomputed every physics tick (cheap vector math only, no block iteration) |
-| Lift ratio | `(lift-tagged blocks) / (total non-air blocks)`, one-time scan over the sub-level's local plot bounds at assembly | Cached once, **never refreshed** on later block edits — deliberately mirrors Sable's own `buildMassTracker()`, which has the exact same one-shot-at-assembly limitation |
+| Lift ratio | `(lift-tagged blocks) / (total non-air blocks)`, one-time scan over the sub-level's local plot bounds | Cached once, **never refreshed** on later block edits (deliberately mirrors Sable's own `buildMassTracker()`) — but computed **lazily on first force application, not eagerly in `onSubLevelAdded`**: live testing found `onSubLevelAdded` fires before a contraption's blocks are actually copied into the sub-level's storage (a real assembled balloon showed a bare 2x2x2 box, `liftRatio=0.0`), so an eager scan there permanently caches an empty snapshot. By the time a sub-level reaches `applyWindForce` it's genuinely running physics ticks, so its blocks are populated. `onSubLevelAdded` isn't overridden at all any more (default no-op); only `onSubLevelRemoved` is, to evict the cache entry |
 | Wind strength | `WindSavedData.get(level).wind().strength()` → `WindHeightScaling.scale(...)` sampled at the contraption's own center-of-mass world Y | Wind state updates ~1Hz via `WindSimulator`; height-scaled value and force are recomputed fresh every physics tick |
 | Force direction | `WindDirection.travelVector(bearingDeg)`, rotated into the sub-level's local frame via `Pose3dc.transformNormalInverse(...)` | Recomputed every physics tick |
 | Application point | The sub-level's local-space center of mass, used as-is (not transformed to world space — see "External references") | Read fresh every tick |
 
-`magnitude = pressureCoefficient * sectionalArea * strength² * liftRatio`,
-clamped to `AeroWeatherCommonConfig.AERONAUTICS_MAX_FORCE` — a single
-scalar multiplier, not a separate vertical lift force, per the explicit
-design requirement. 0 lift-tagged blocks → 0 force, handled as a cheap
-early-exit.
+`magnitude = pressureCoefficient * sectionalArea * strength² * liftRatio
+* oscillation`, clamped to `AeroWeatherCommonConfig.AERONAUTICS_MAX_FORCE`
+— a single scalar multiplier, not a separate vertical lift force, per
+the explicit design requirement. 0 lift-tagged blocks → 0 force,
+handled as a cheap early-exit. `oscillation = 1 +
+oscillationAmplitude * sin(2π * (gameTime/20s) / oscillationPeriodSeconds)`
+— a subtle sinusoidal ripple (default ±5% every 2s) phased off the
+level's game time rather than accumulated physics-substep dt, so it
+stays stable regardless of how many substeps run per game tick.
+Live-testing feedback (a real assembled hot air balloon) found the
+initial `pressureCoefficient` default (0.01) far too strong; lowered by
+50x to `0.0002`.
 
 Lift blocks are the union of three confirmed, pre-existing block tags —
 `#aeronautics:envelope` (balloon fabric), `#aeronautics:levitite`
