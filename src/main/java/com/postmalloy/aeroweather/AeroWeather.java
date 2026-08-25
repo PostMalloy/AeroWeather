@@ -35,6 +35,6 @@ public class AeroWeather {
         AeroWeatherParticles.PARTICLE_TYPES.register(modEventBus);
 
         // Start the Aeronautics wind force integration (a no-op unless Sable is installed)
-        AeronauticsIntegration.get().start();
+        AeronauticsIntegration.get().start(modEventBus);
     }
 }

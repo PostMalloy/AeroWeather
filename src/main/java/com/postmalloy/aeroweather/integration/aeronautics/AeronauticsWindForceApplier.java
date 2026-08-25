@@ -16,6 +16,7 @@ import com.postmalloy.aeroweather.wind.WindSavedData;
 import com.postmalloy.aeroweather.wind.WindState;
 
 import dev.ryanhcode.sable.api.physics.force.ForceGroup;
+import dev.ryanhcode.sable.api.physics.force.ForceGroups;
 import dev.ryanhcode.sable.api.physics.force.QueuedForceGroup;
 import dev.ryanhcode.sable.api.physics.mass.MassData;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
@@ -32,11 +33,14 @@ import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.registries.RegisterEvent;
 
 /**
  * The only class in AeroWeather allowed to reference Sable (or Create/
@@ -45,15 +49,19 @@ import net.neoforged.neoforge.common.NeoForge;
  * {@link AeronauticsIntegration} after {@link ModCompat#isLoaded} has
  * confirmed Sable is present.
  * <p>
- * Event registration in {@link #start()} is deliberately manual/instance-
+ * Event registration in {@link #start} is deliberately manual/instance-
  * based ({@code NeoForge.EVENT_BUS.addListener(...)}), NOT this
  * codebase's usual {@code @EventBusSubscriber} + static
  * {@code @SubscribeEvent} pattern — that pattern gets scanned and
  * registered by NeoForge at mod-init regardless of intent, which would
  * force-classload Sable's event types even when Sable isn't installed.
- * Manual registration inside {@code start()} keeps classloading
+ * Manual registration inside {@code start} keeps classloading
  * conditional on the isolation-rule check already having passed. Do not
- * "clean this up" to the usual annotation pattern.
+ * "clean this up" to the usual annotation pattern. The one exception is
+ * the {@code ForceGroup} registration below, which genuinely needs the
+ * mod event bus's {@code RegisterEvent} (the only bus it fires on) —
+ * still manual (a plain {@code addListener} call inside {@code start}),
+ * just not on {@code NeoForge.EVENT_BUS} like the other two.
  * <p>
  * Applies wind force uniformly to every Sable sub-level (not just
  * recognized Create Aeronautics assemblies) gated only on Sable being
@@ -61,6 +69,17 @@ import net.neoforged.neoforge.common.NeoForge;
  * no clean way to restrict this further; see CLAUDE.md's M6/M7 notes.
  */
 public final class AeronauticsWindForceApplier implements WindForceApplier, SubLevelObserver {
+    /**
+     * Constructing this is safe without touching the registry (a plain
+     * record), but it must also be REGISTERED into {@code ForceGroups.REGISTRY}
+     * (see {@link #onRegisterForceGroup}) - an unregistered ForceGroup has no
+     * registry id, and Create Aeronautics' contraption diagram tool crashes
+     * the connection trying to network-encode a sub-level's queued force
+     * groups by id (confirmed live: NullPointerException encoding
+     * `simulated:diagram_data`, deep in an Object2ObjectMap<ForceGroup,...>
+     * codec). Registering it (rather than just not using ForceGroups at all)
+     * also makes the wind force show up correctly on that same diagram.
+     */
     private static final ForceGroup WIND_FORCE_GROUP = new ForceGroup(
             Component.translatable("aeroweather.aeronautics.force_group.name"),
             Component.translatable("aeroweather.aeronautics.force_group.description"),
@@ -73,9 +92,30 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
     private volatile boolean disabled = false;
 
     @Override
-    public void start() {
-        NeoForge.EVENT_BUS.addListener(ForgeSableSubLevelContainerReadyEvent.class, this::onSubLevelContainerReady);
-        NeoForge.EVENT_BUS.addListener(ForgeSablePrePhysicsTickEvent.class, this::onPrePhysicsTick);
+    public void start(IEventBus modEventBus) {
+        try {
+            modEventBus.addListener(RegisterEvent.class, this::onRegisterForceGroup);
+            NeoForge.EVENT_BUS.addListener(ForgeSableSubLevelContainerReadyEvent.class, this::onSubLevelContainerReady);
+            NeoForge.EVENT_BUS.addListener(ForgeSablePrePhysicsTickEvent.class, this::onPrePhysicsTick);
+        } catch (Throwable t) {
+            AeroWeather.LOGGER.error("Failed to start the Aeronautics wind force integration; disabling.", t);
+            disabled = true;
+        }
+    }
+
+    /**
+     * NeoForge fires RegisterEvent once per registry; this no-ops unless the
+     * registryKey matches ForceGroups.REGISTRY_KEY, per the standard pattern.
+     * Only vanilla Registry/RegisterEvent types are touched here (not Veil's
+     * RegistrationProvider/RegistryObject, which ForceGroups.GRAVITY/DRAG/etc.
+     * use internally) - confirmed via a compile-time smoke test that
+     * referencing ForceGroups.REGISTRY_KEY/REGISTRY alone doesn't require Veil
+     * on the classpath, unlike referencing the individual built-in groups.
+     */
+    private void onRegisterForceGroup(RegisterEvent event) {
+        event.register(ForceGroups.REGISTRY_KEY,
+                ResourceLocation.fromNamespaceAndPath(AeroWeather.MODID, "wind"),
+                () -> WIND_FORCE_GROUP);
     }
 
     private void onSubLevelContainerReady(ForgeSableSubLevelContainerReadyEvent event) {
