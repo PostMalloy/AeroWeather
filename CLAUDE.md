@@ -86,12 +86,16 @@ wind/
 network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
   payload/ClientboundWindSyncPayload.java   record CustomPacketPayload: dimension id, directionDeg, strength
-  ClientPayloadHandler.java           updates client.ClientWindState on receipt
+  payload/ClientboundActiveContraptionsPayload.java   record CustomPacketPayload: dimension id, List<Vec3> positions
+                                       (Sable sub-levels currently experiencing wind force; broadcast from
+                                       AeronauticsWindForceApplier, not WindSync - see M7 particle-gating notes)
+  ClientPayloadHandler.java           updates client.ClientWindState / client.ClientActiveContraptions on receipt
   WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat (per simulation step)
   PlayerSyncListener.java             PlayerLoggedInEvent/PlayerChangedDimensionEvent/PlayerRespawnEvent -> WindSync.sendTo(player)
 
 client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
+  ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
   particle/
     WindStreakParticle.java           TextureSheetParticle + nested Provider
     AeroWeatherParticleProviders.java RegisterParticleProvidersEvent registration
@@ -320,6 +324,47 @@ built-in constants being Veil-typed. This is also what makes the wind
 force actually show up on that diagram, alongside Sable's own
 gravity/drag/lift entries — `defaultDisplayed = true` on the
 `ForceGroup` controls that.
+
+A hard constraint independent of all the above: a contraption with zero
+lift-tagged blocks never gets wind force calculated at all —
+`applyWindForce` returns immediately once `profile.liftRatio() <= 0.0`,
+before touching mass, strength, direction, or magnitude. Not a
+special case, just the natural consequence of `liftRatio` being exactly
+`0.0` when `liftBlocks == 0`.
+
+**Particle gating by proximity to an active contraption** (client-only
+opt-in, off by default): `WindParticleSpawner` can suppress ambient
+wind particles entirely unless the player is within
+`AeroWeatherClientConfig.ACTIVE_CONTRAPTION_RADIUS` of a Sable
+sub-level that's *currently* experiencing nonzero wind force, gated by
+`AeroWeatherClientConfig.RESTRICT_TO_ACTIVE_CONTRAPTIONS`. "Currently
+experiencing force" is the same set the hard constraint above already
+produces — a contraption with no lift blocks (or one with lift blocks
+but zero effective force this tick, e.g. elevation at/below sea level)
+never enters this set, so no separate exclusion logic was needed; it
+falls out of only recording a position when `applyWindForce` actually
+reaches the `applyAndRecordPointForce` call.
+
+Plumbing: `AeronauticsWindForceApplier` collects each tick's active
+world-space positions (the same `comWorld` already computed for
+`WindHeightScaling` sampling) into a per-level list, rebuilt fresh
+every physics tick (never appended to — a level with nothing active
+this tick gets an empty list, not stale data from the last tick
+something was). A **separate** `LevelTickEvent.Post` listener (plain
+NeoForge type, registered the same manual way as everything else in
+this class) broadcasts that snapshot on a fixed 5-tick cadence via the
+new `ClientboundActiveContraptionsPayload` — deliberately decoupled
+from Sable's own physics-substep cadence (which fires far more often
+than clients need position updates for a soft gating feature) and kept
+separate from `ClientboundWindSyncPayload`/`WindSync` (wind *state* vs.
+contraption *positions* are different concerns with very different
+natural update rates). Always broadcasts, even an empty list, so stale
+positions clear correctly once nothing is active. Client-side,
+`ClientActiveContraptions` mirrors `ClientWindState`'s exact shape
+(static holder, `update(...)`, per-dimension) but tracks this instead.
+No join/dimension-change immediate-sync path (unlike `WindSync`) — the
+5-tick periodic broadcast alone closes that gap fast enough for a
+particle-cosmetics feature, so the extra wiring wasn't worth it.
 
 ## Command reference
 
