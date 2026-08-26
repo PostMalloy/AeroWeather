@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/aseprite/Logo.png" width="100%" />
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/Logo.png" width="100%" />
 </p>
 
 ## Description
@@ -7,6 +7,10 @@ Aeroweather is a minecraft mod that provides a lightweight and configurable wind
 
 
 Perhaps most importantly, wind will impart force on Create Aeronautics contraptions. The force of the wind is calculated via the cross-sectional area of the contraption that faces the wind, and scaled by the proportion of balloon, levitite, or wing-like blocks on your contraption to the proportion of non-lifting blocks. This means that contraptions without any of these blocks (such as cars, mining machines, etc) are unaffected by the wind, while contraptions like hot air balloons are most affected by it. 
+
+<p align="center">
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex1.gif" width="100%" />
+</p>
 
 ## Commands
 
