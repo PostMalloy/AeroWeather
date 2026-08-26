@@ -113,9 +113,9 @@ stay unique mod-wide (section context isn't part of its lookup).
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png` (declared
 in `wind_streak.json`), `gustparticle{1-8}.png` (declared in
-`wind_gust.json`, the `WIND_GUST` type — spawned by `WindParticleSpawner`
-once elevation-adjusted strength exceeds
-`AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH`), and
+`wind_gust.json`, the `WIND_GUST` type — spawned at half of
+`WIND_STREAK`'s rate by `WindParticleSpawner`, once elevation-adjusted
+strength exceeds `AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH`), and
 `loopparticle{1-8}.png` (declared in `wind_loop.json`, the `WIND_LOOP`
 type — spawned by the exact same always-on accumulator formula as
 `WIND_STREAK`, but each trigger only actually spawns on a 50% coin

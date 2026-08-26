@@ -39,19 +39,21 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * {@code AeroWeatherCommand}'s "wind info" output, which reports the
  * same elevation-adjusted value).
  * <p>
- * A second particle type, {@code WIND_GUST}, uses the identical
- * spawn/rate logic but only once the elevation-adjusted strength exceeds
+ * A second particle type, {@code WIND_GUST}, uses half of
+ * {@code WIND_STREAK}'s spawn-rate formula, only once the
+ * elevation-adjusted strength exceeds
  * {@link AeroWeatherClientConfig#GUST_PARTICLE_MIN_STRENGTH} (default
  * 50/100), via its own accumulator so its rate doesn't borrow from or
- * interfere with the always-on {@code WIND_STREAK} spawning. A third
- * type, {@code WIND_LOOP}, mirrors {@code WIND_STREAK}'s exact
- * always-on spawn-rate formula via its own accumulator, but each
- * trigger only actually spawns a particle on a 50% coin flip — a
- * rarer companion texture layered in for visual variety, not an
- * additional full-rate particle stream.
+ * interfere with the always-on {@code WIND_STREAK} spawning — a rarer
+ * accent, not a second full-rate particle stream. A third type,
+ * {@code WIND_LOOP}, mirrors {@code WIND_STREAK}'s exact always-on
+ * spawn-rate formula via its own accumulator, but each trigger only
+ * actually spawns a particle on a 50% coin flip — a rarer companion
+ * texture layered in for visual variety, not an additional full-rate
+ * particle stream.
  * <p>
  * If {@link AeroWeatherClientConfig#RESTRICT_TO_ACTIVE_CONTRAPTIONS} is
- * enabled, both particle types are suppressed entirely unless the player
+ * enabled, all three particle types are suppressed entirely unless the player
  * is within {@link AeroWeatherClientConfig#ACTIVE_CONTRAPTION_RADIUS} of
  * a Sable sub-level currently experiencing real wind force — synced from
  * {@code AeronauticsWindForceApplier} via {@link ClientActiveContraptions}.
@@ -121,7 +123,9 @@ public final class WindParticleSpawner {
 
         float gustMinStrength = (float) AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH.getAsDouble();
         if (strength > gustMinStrength) {
-            gustSpawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
+            // Half WIND_STREAK's rate - gusts are meant to read as a rarer accent, not a
+            // second full-rate particle stream.
+            gustSpawnAccumulator += 0.5F * maxParticlesPerTick * (strength / 100.0F);
             while (gustSpawnAccumulator >= 1.0F) {
                 gustSpawnAccumulator -= 1.0F;
                 spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_GUST.get());
