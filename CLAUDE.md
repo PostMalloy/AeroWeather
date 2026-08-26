@@ -118,10 +118,18 @@ once elevation-adjusted strength exceeds
 `AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH`, sharing
 `WindStreakParticle`'s class/rendering entirely, just a different
 `SpriteSet`). `WindStreakParticle` cycles its 8 frames exactly once over
-its own randomized 24-40 tick lifetime via vanilla
-`TextureSheetParticle#setSpriteFromAge` (not a fixed per-frame duration,
-which looped 1.5-2.5x before a particle disappeared and read as
-stuttery). It bypasses `TextureSheetParticle`'s 7-arg constructor
+its own lifetime via vanilla `TextureSheetParticle#setSpriteFromAge`
+(not a fixed per-frame duration, which looped 1.5-2.5x before a
+particle disappeared and read as stuttery — `setSpriteFromAge` always
+spans the full frame set over `[0, lifetime]` regardless of what
+lifetime is, so "exactly one cycle" holds no matter how lifetime is
+computed). Lifetime itself (12-40 ticks, plus jitter) is derived from
+wind speed, recovered from the constructor's `xSpeed`/`zSpeed` since
+`ParticleProvider#createParticle`'s fixed vanilla signature has no room
+for an explicit strength parameter — velocity magnitude already equals
+`WindParticleSpawner`'s locally-adjusted drift speed exactly, since
+travel direction is a unit vector. Stronger wind means a shorter life
+and thus a faster-cycling flipbook. It bypasses `TextureSheetParticle`'s 7-arg constructor
 (chains to vanilla `Particle`'s randomizing constructor, which jitters
 velocity and adds +0.1 to `yd`) and sets `xd`/`yd`/`zd` directly instead.
 

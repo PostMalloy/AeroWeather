@@ -3,6 +3,7 @@ package com.postmalloy.aeroweather.client.particle;
 import org.joml.Quaternionf;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -15,17 +16,29 @@ import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.util.RandomSource;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 
 /**
  * A single wisp used to show wind direction. Cycles through its 8
- * texture frames exactly once over the particle's own (randomized,
- * 24-40 tick) lifetime, via vanilla {@link TextureSheetParticle#setSpriteFromAge},
- * so the animation speed is tied to how long that particular particle
- * happens to live rather than a fixed cadence — a fixed per-frame
- * duration was tried first but looped 1.5-2.5x before the particle
- * disappeared, which read as stuttery. Shared by both registered
+ * texture frames exactly once over the particle's own lifetime, via
+ * vanilla {@link TextureSheetParticle#setSpriteFromAge}, so the
+ * animation speed is tied to how long that particular particle happens
+ * to live rather than a fixed cadence — a fixed per-frame duration was
+ * tried first but looped 1.5-2.5x before the particle disappeared,
+ * which read as stuttery. Lifetime itself is derived from wind speed
+ * (recovered from the constructor's {@code xSpeed}/{@code zSpeed} —
+ * {@link ParticleProvider#createParticle} has a fixed vanilla signature
+ * with no room for an explicit strength parameter, but its velocity
+ * magnitude already equals {@code WindParticleSpawner}'s locally
+ * adjusted drift speed exactly, since travel direction is a unit
+ * vector) so stronger wind means a shorter life and thus a
+ * faster-cycling flipbook, with a small random jitter on top for
+ * variety; because {@code setSpriteFromAge} always spans the full
+ * frame set over {@code [0, lifetime]} regardless of what lifetime
+ * is, "exactly one cycle per particle" holds automatically no matter
+ * how lifetime is computed. Shared by both registered
  * particle types — {@code wind_streak}
  * (assets/aeroweather/particles/wind_streak.json, spawned continuously)
  * and {@code wind_gust} (wind_gust.json, spawned only above a strength
@@ -48,6 +61,12 @@ import net.neoforged.api.distmarker.OnlyIn;
  */
 @OnlyIn(Dist.CLIENT)
 public class WindStreakParticle extends TextureSheetParticle {
+    // Lifetime range at the extremes of the configured drift-speed range - faster wind
+    // means a shorter life (and, via setSpriteFromAge, a faster-cycling flipbook).
+    private static final int MIN_LIFETIME_TICKS = 12;
+    private static final int MAX_LIFETIME_TICKS = 40;
+    private static final int LIFETIME_JITTER_TICKS = 6;
+
     private final SpriteSet sprites;
     private final Quaternionf orientation;
     private final boolean mirrored;
@@ -68,13 +87,32 @@ public class WindStreakParticle extends TextureSheetParticle {
         this.gravity = 0.0F;
         this.friction = 1.0F;
         this.quadSize = 0.4F + this.random.nextFloat() * 0.3F;
-        this.lifetime = 24 + this.random.nextInt(17); // 24-40 ticks
+        this.lifetime = lifetimeForSpeed(xSpeed, zSpeed, this.random);
         this.setSpriteFromAge(this.sprites);
         // Set the correct age=0 alpha immediately - without this, the particle renders
         // at the default alpha (1.0, fully opaque) for however many frames occur before
         // its first tick() call (which is what actually applies fadeAlpha()), then jumps
         // down to a low value once that first tick fires. That mismatch is the flicker.
         this.setAlpha(fadeAlpha());
+    }
+
+    /**
+     * Recovers wind speed from the constructor's velocity (the only wind-speed-correlated
+     * data available through {@link ParticleProvider}'s fixed signature) and maps it onto
+     * {@code [MIN_SPEED, MAX_SPEED]} from {@link AeroWeatherClientConfig} to get a fraction,
+     * then interpolates the lifetime range inversely - stronger wind, shorter life, faster
+     * flipbook - with a small random offset layered on for visual variety.
+     */
+    private static int lifetimeForSpeed(double xSpeed, double zSpeed, RandomSource random) {
+        double speed = Math.sqrt(xSpeed * xSpeed + zSpeed * zSpeed);
+        float minSpeed = (float) AeroWeatherClientConfig.MIN_SPEED.getAsDouble();
+        float maxSpeed = (float) AeroWeatherClientConfig.MAX_SPEED.getAsDouble();
+        float speedFraction = maxSpeed > minSpeed
+                ? Math.clamp((float) ((speed - minSpeed) / (maxSpeed - minSpeed)), 0.0F, 1.0F)
+                : 0.0F;
+        int baseLifetime = Math.round(MAX_LIFETIME_TICKS - speedFraction * (MAX_LIFETIME_TICKS - MIN_LIFETIME_TICKS));
+        int jitter = random.nextInt(LIFETIME_JITTER_TICKS * 2 + 1) - LIFETIME_JITTER_TICKS;
+        return Math.max(1, baseLifetime + jitter);
     }
 
     private static Quaternionf orientationForTravelDirection(double xSpeed, double zSpeed) {
