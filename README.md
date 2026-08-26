@@ -1,6 +1,9 @@
 
 # AeroWeather - a Lightweight Wind Implementation
 
+
+
+## Description
 Aeroweather is a mod that provides a lightweight and configurable wind system to minecraft. Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
 
 
