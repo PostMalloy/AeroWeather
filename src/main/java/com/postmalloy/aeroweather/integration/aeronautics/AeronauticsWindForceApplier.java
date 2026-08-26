@@ -97,8 +97,19 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
     private final Map<UUID, LiftProfile> liftProfiles = new ConcurrentHashMap<>();
     /** Resolves which ServerLevel a ForgeSablePrePhysicsTickEvent belongs to. */
     private final Map<SubLevelPhysicsSystem, ServerLevel> levelsByPhysicsSystem = new HashMap<>();
-    /** World-space positions with wind force currently applied, as of the latest physics tick, per level. Replaced (not appended to) every physics tick. */
+    /**
+     * World-space positions with wind force currently applied, per level -
+     * only rebuilt on substeps aligned with {@link #ACTIVE_CONTRAPTIONS_BROADCAST_INTERVAL_TICKS}
+     * (see {@link #beginPositionRecordingIfDue}), NOT every physics substep.
+     * Building this every substep (as an earlier version did) allocated and
+     * populated a list on every one of Sable's (much more frequent than the
+     * broadcast cadence) substeps, discarding almost all of that work unread -
+     * wasted allocation that scaled with both contraption count and substep
+     * rate for no benefit, per a performance review.
+     */
     private final Map<ServerLevel, List<Vec3>> activePositionsByLevel = new ConcurrentHashMap<>();
+    /** Last game tick each level's position list was (re)built, so multiple substeps within the same recording tick don't rebuild it repeatedly. */
+    private final Map<ServerLevel, Long> lastPositionRecordTickByLevel = new ConcurrentHashMap<>();
     private volatile boolean disabled = false;
 
     @Override
@@ -219,10 +230,9 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             if (level == null) {
                 return;
             }
-            // Always replaced fresh this tick (even to empty) - never left stale from a previous
-            // tick, e.g. if wind strength just dropped to 0 and the loop below never runs.
-            List<Vec3> activePositions = new ArrayList<>();
-            activePositionsByLevel.put(level, activePositions);
+            // Null on every substep except the ones actually due to feed the broadcast - see
+            // beginPositionRecordingIfDue's doc. applyWindForce below skips recording when null.
+            List<Vec3> activePositions = beginPositionRecordingIfDue(level);
 
             WindState wind = WindSavedData.get(level).wind();
             if (wind.strength() <= 0.0f) {
@@ -240,6 +250,30 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             AeroWeather.LOGGER.error("Failed to process a Sable physics tick; disabling AeroWeather's wind force.", t);
             disabled = true;
         }
+    }
+
+    /**
+     * Returns a fresh, empty list - already stored into {@link #activePositionsByLevel} so the
+     * broadcast sees an up-to-date (possibly still-empty) snapshot even if nothing below ends up
+     * adding to it - only on the first substep of a game tick aligned with
+     * {@link #ACTIVE_CONTRAPTIONS_BROADCAST_INTERVAL_TICKS}. Returns null on every other substep
+     * (including later substeps within the same recording tick, tracked via
+     * {@link #lastPositionRecordTickByLevel}), meaning "don't bother recording" - nothing reads
+     * the list before the next recording tick anyway, so building it on every substep (as an
+     * earlier version did) was pure wasted allocation under heavy contraption load.
+     */
+    private List<Vec3> beginPositionRecordingIfDue(ServerLevel level) {
+        long gameTime = level.getGameTime();
+        if (gameTime % ACTIVE_CONTRAPTIONS_BROADCAST_INTERVAL_TICKS != 0) {
+            return null;
+        }
+        Long previouslyRecordedTick = lastPositionRecordTickByLevel.put(level, gameTime);
+        if (previouslyRecordedTick != null && previouslyRecordedTick == gameTime) {
+            return null;
+        }
+        List<Vec3> activePositions = new ArrayList<>();
+        activePositionsByLevel.put(level, activePositions);
+        return activePositions;
     }
 
     private void applyWindForce(ServerSubLevel subLevel, ServerLevel level, WindState wind, List<Vec3> activePositions) {
@@ -295,7 +329,9 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         Vector3d force = new Vector3d(localWindDirection).mul(magnitude);
         QueuedForceGroup queued = subLevel.getOrCreateQueuedForceGroup(WIND_FORCE_GROUP);
         queued.applyAndRecordPointForce(new Vector3d(centerOfMass), force);
-        activePositions.add(comWorld);
+        if (activePositions != null) {
+            activePositions.add(comWorld);
+        }
     }
 
     /**
