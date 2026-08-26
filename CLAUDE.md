@@ -482,13 +482,28 @@ but don't actively make future extension harder either:
 - ~~M7 — Aeronautics integration implementation~~ (`integration/` package
   built: `AeronauticsWindForceApplier` applies wind force to every Sable
   sub-level's center of mass, gated on `sable` alone being loaded. See
-  "M7: Aeronautics wind force" below for the full design. Verified by
-  compiling only — the isolation rule was checked by grepping for
-  Sable/Create/Aeronautics imports outside `AeronauticsWindForceApplier.java`
-  (found none) — live in-game verification (does a real assembled
-  airship actually get pushed, does the force feel right) is explicitly
-  deferred to M8)
-- M8 — Integration testing & tuning against real in-game airship behavior
+  "M7: Aeronautics wind force" below for the full design. Initially
+  verified by compiling only — the isolation rule was checked by
+  grepping for Sable/Create/Aeronautics imports outside
+  `AeronauticsWindForceApplier.java` (found none) — live in-game
+  verification followed in M8, below, which found and fixed two real
+  bugs compiling alone couldn't have caught)
+- ~~M8 — Integration testing & tuning against real in-game airship
+  behavior~~ Verified against a real assembled hot air balloon. Found
+  and fixed two real bugs live testing alone surfaced: (1) "no force
+  applied" — `onSubLevelAdded` fires before a contraption's blocks are
+  copied into storage, so the eager lift-ratio scan permanently cached
+  an empty snapshot; fixed by computing it lazily on first force
+  application instead (see the M7 design section's lift-ratio row).
+  (2) A client disconnect crash when placing a contraption diagram —
+  `WIND_FORCE_GROUP` was never registered into Sable's `ForceGroups`
+  registry, so the diagram's network encoder NPE'd trying to look up
+  its id; fixed via a standard `RegisterEvent` listener (see "External
+  references"). Also tuned `pressureCoefficient`/`oscillationAmplitude`
+  against how the force actually felt in-game (down 500x and up from
+  "subtle" to `0.6` respectively — see the M7 design section), and
+  added the hard no-lift-blocks-means-no-force constraint and the
+  proximity-gated particle feature directly off of what testing showed.
 
 ## External references
 
