@@ -2,7 +2,7 @@
 # AeroWeather - a Lightweight Wind Implementation
 
 <p align="center">
-  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/aseprite/Logo.png" width="50%" />
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/aseprite/Logo.png" width="100%" />
 </p>
 
 ## Description
