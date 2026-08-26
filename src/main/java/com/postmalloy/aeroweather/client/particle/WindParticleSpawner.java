@@ -43,7 +43,12 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * spawn/rate logic but only once the elevation-adjusted strength exceeds
  * {@link AeroWeatherClientConfig#GUST_PARTICLE_MIN_STRENGTH} (default
  * 50/100), via its own accumulator so its rate doesn't borrow from or
- * interfere with the always-on {@code WIND_STREAK} spawning.
+ * interfere with the always-on {@code WIND_STREAK} spawning. A third
+ * type, {@code WIND_LOOP}, mirrors {@code WIND_STREAK}'s exact
+ * always-on spawn-rate formula via its own accumulator, but each
+ * trigger only actually spawns a particle on a 50% coin flip — a
+ * rarer companion texture layered in for visual variety, not an
+ * additional full-rate particle stream.
  * <p>
  * If {@link AeroWeatherClientConfig#RESTRICT_TO_ACTIVE_CONTRAPTIONS} is
  * enabled, both particle types are suppressed entirely unless the player
@@ -57,6 +62,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 public final class WindParticleSpawner {
     private static float spawnAccumulator;
     private static float gustSpawnAccumulator;
+    private static float loopSpawnAccumulator;
 
     private WindParticleSpawner() {
     }
@@ -101,6 +107,16 @@ public final class WindParticleSpawner {
         while (spawnAccumulator >= 1.0F) {
             spawnAccumulator -= 1.0F;
             spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_STREAK.get());
+        }
+
+        // WIND_LOOP mirrors WIND_STREAK's exact spawn-rate formula, but only half of its
+        // triggers actually spawn a particle - a rarer companion texture for visual variety.
+        loopSpawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
+        while (loopSpawnAccumulator >= 1.0F) {
+            loopSpawnAccumulator -= 1.0F;
+            if (level.random.nextBoolean()) {
+                spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_LOOP.get());
+            }
         }
 
         float gustMinStrength = (float) AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH.getAsDouble();

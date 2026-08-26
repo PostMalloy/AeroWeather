@@ -17,5 +17,6 @@ public final class AeroWeatherParticleProviders {
     static void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
         event.registerSpriteSet(AeroWeatherParticles.WIND_STREAK.get(), WindStreakParticle.Provider::new);
         event.registerSpriteSet(AeroWeatherParticles.WIND_GUST.get(), WindStreakParticle.Provider::new);
+        event.registerSpriteSet(AeroWeatherParticles.WIND_LOOP.get(), WindStreakParticle.Provider::new);
     }
 }

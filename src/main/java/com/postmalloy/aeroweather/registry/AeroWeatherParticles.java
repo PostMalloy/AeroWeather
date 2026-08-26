@@ -17,6 +17,9 @@ public final class AeroWeatherParticles {
     public static final DeferredHolder<ParticleType<?>, SimpleParticleType> WIND_GUST =
             PARTICLE_TYPES.register("wind_gust", () -> new SimpleParticleType(false));
 
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> WIND_LOOP =
+            PARTICLE_TYPES.register("wind_loop", () -> new SimpleParticleType(false));
+
     private AeroWeatherParticles() {
     }
 }

@@ -82,7 +82,7 @@ client/
     WindParticleSpawner.java          ClientTickEvent.Post: spawns particles around player from ClientWindState
 
 registry/
-  AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST
+  AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST, WIND_LOOP
   AeroWeatherCommandArgumentTypes.java  DeferredRegister<ArgumentTypeInfo<?,?>>: registers DirectionArgument for command-tree sync
 
 command/
@@ -112,12 +112,17 @@ stay unique mod-wide (section context isn't part of its lookup).
 
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png` (declared
-in `wind_streak.json`) and `gustparticle{1-8}.png` (declared in
+in `wind_streak.json`), `gustparticle{1-8}.png` (declared in
 `wind_gust.json`, the `WIND_GUST` type — spawned by `WindParticleSpawner`
 once elevation-adjusted strength exceeds
-`AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH`, sharing
-`WindStreakParticle`'s class/rendering entirely, just a different
-`SpriteSet`). `WindStreakParticle` cycles its 8 frames exactly once over
+`AeroWeatherClientConfig.GUST_PARTICLE_MIN_STRENGTH`), and
+`loopparticle{1-8}.png` (declared in `wind_loop.json`, the `WIND_LOOP`
+type — spawned by the exact same always-on accumulator formula as
+`WIND_STREAK`, but each trigger only actually spawns on a 50% coin
+flip, a rarer companion texture for visual variety, not an additional
+full-rate stream). All three share `WindStreakParticle`'s
+class/rendering entirely, just a different `SpriteSet`.
+`WindStreakParticle` cycles its 8 frames exactly once over
 its own lifetime via vanilla `TextureSheetParticle#setSpriteFromAge`
 (not a fixed per-frame duration, which looped 1.5-2.5x before a
 particle disappeared and read as stuttery — `setSpriteFromAge` always

@@ -38,11 +38,13 @@ import net.neoforged.api.distmarker.OnlyIn;
  * variety; because {@code setSpriteFromAge} always spans the full
  * frame set over {@code [0, lifetime]} regardless of what lifetime
  * is, "exactly one cycle per particle" holds automatically no matter
- * how lifetime is computed. Shared by both registered
+ * how lifetime is computed. Shared by all three registered
  * particle types — {@code wind_streak}
- * (assets/aeroweather/particles/wind_streak.json, spawned continuously)
- * and {@code wind_gust} (wind_gust.json, spawned only above a strength
- * threshold) — since they differ only in which texture set their
+ * (assets/aeroweather/particles/wind_streak.json, spawned continuously),
+ * {@code wind_gust} (wind_gust.json, spawned only above a strength
+ * threshold), and {@code wind_loop} (wind_loop.json, spawned at the
+ * same rate as {@code wind_streak} but only realized 50% of the time)
+ * — since they differ only in which texture set their
  * {@link SpriteSet} resolves to; all orientation/rendering/lifecycle
  * behavior is identical.
  * <p>
