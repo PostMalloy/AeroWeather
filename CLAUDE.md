@@ -345,26 +345,39 @@ never enters this set, so no separate exclusion logic was needed; it
 falls out of only recording a position when `applyWindForce` actually
 reaches the `applyAndRecordPointForce` call.
 
-Plumbing: `AeronauticsWindForceApplier` collects each tick's active
-world-space positions (the same `comWorld` already computed for
-`WindHeightScaling` sampling) into a per-level list, rebuilt fresh
-every physics tick (never appended to — a level with nothing active
-this tick gets an empty list, not stale data from the last tick
-something was). A **separate** `LevelTickEvent.Post` listener (plain
-NeoForge type, registered the same manual way as everything else in
-this class) broadcasts that snapshot on a fixed 5-tick cadence via the
-new `ClientboundActiveContraptionsPayload` — deliberately decoupled
-from Sable's own physics-substep cadence (which fires far more often
-than clients need position updates for a soft gating feature) and kept
-separate from `ClientboundWindSyncPayload`/`WindSync` (wind *state* vs.
-contraption *positions* are different concerns with very different
-natural update rates). Always broadcasts, even an empty list, so stale
-positions clear correctly once nothing is active. Client-side,
-`ClientActiveContraptions` mirrors `ClientWindState`'s exact shape
-(static holder, `update(...)`, per-dimension) but tracks this instead.
-No join/dimension-change immediate-sync path (unlike `WindSync`) — the
-5-tick periodic broadcast alone closes that gap fast enough for a
-particle-cosmetics feature, so the extra wiring wasn't worth it.
+Plumbing: `AeronauticsWindForceApplier` collects active world-space
+positions (the same `comWorld` already computed for `WindHeightScaling`
+sampling) into a per-level list. A **separate** `LevelTickEvent.Post`
+listener (plain NeoForge type, registered the same manual way as
+everything else in this class) broadcasts that snapshot on a fixed
+5-tick cadence via `ClientboundActiveContraptionsPayload` — deliberately
+decoupled from Sable's own physics-substep cadence (which fires far
+more often than clients need position updates for a soft gating
+feature) and kept separate from `ClientboundWindSyncPayload`/`WindSync`
+(wind *state* vs. contraption *positions* are different concerns with
+very different natural update rates). Always broadcasts, even an empty
+list, so stale positions clear correctly once nothing is active.
+Client-side, `ClientActiveContraptions` mirrors `ClientWindState`'s
+exact shape (static holder, `update(...)`, per-dimension) but tracks
+this instead. No join/dimension-change immediate-sync path (unlike
+`WindSync`) — the 5-tick periodic broadcast alone closes that gap fast
+enough for a particle-cosmetics feature, so the extra wiring wasn't
+worth it.
+
+**Performance note (fixed after a review)**: the position list is only
+rebuilt on physics substeps aligned with the same 5-tick cadence the
+broadcast reads it on (`beginPositionRecordingIfDue`, tracked per-level
+via `lastPositionRecordTickByLevel` so multiple substeps within one
+recording tick don't rebuild it repeatedly) — **not every physics
+substep**. An earlier version rebuilt the list on every substep
+regardless of whether the broadcast was about to read it; since Sable's
+substep rate can exceed the 20Hz game tick, that meant allocating and
+populating a list with every active contraption's position many times
+for every one time it was actually read — wasted work scaling with both
+contraption count and substep rate for zero benefit. `applyWindForce`
+now takes a nullable `activePositions` list and simply skips recording
+when it's null (force application itself is unaffected either way — it
+still runs, and re-queues force, every substep regardless).
 
 ## Command reference
 
