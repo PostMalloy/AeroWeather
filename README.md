@@ -1,12 +1,9 @@
-
-# AeroWeather - a Lightweight Wind Implementation
-
 <p align="center">
   <img src="https://github.com/PostMalloy/AeroWeather/blob/master/aseprite/Logo.png" width="100%" />
 </p>
 
 ## Description
-Aeroweather is a mod that provides a lightweight and configurable wind system to minecraft. Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
+Aeroweather is a minecraft mod that provides a lightweight and configurable wind system to minecraft. Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
 
 
 Perhaps most importantly, wind will impart force on Create Aeronautics contraptions. The force of the wind is calculated via the cross-sectional area of the contraption that faces the wind, and scaled by the proportion of balloon, levitite, or wing-like blocks on your contraption to the proportion of non-lifting blocks. This means that contraptions without any of these blocks (such as cars, mining machines, etc) are unaffected by the wind, while contraptions like hot air balloons are most affected by it. 
