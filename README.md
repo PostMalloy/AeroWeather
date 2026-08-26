@@ -28,6 +28,8 @@ The mod was designed to be as configurable as possible.
 
 ## Future Features
 
+* Wind sounds that scale based on local wind speed
+
 * Biome influence - Wind should be stronger in a plains or badlands biome, compared to a forest or taiga. This influence will decay with y-level.
 
 * Handheld and placeable wind measurement devices that work on contraptions. The placeable block will emit a redstone signal in the direction of the wind.
