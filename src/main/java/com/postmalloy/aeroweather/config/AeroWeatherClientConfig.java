@@ -74,7 +74,7 @@ public final class AeroWeatherClientConfig {
         builder.comment("Wind influence on vanilla ambient particles (campfire smoke, falling cherry leaves) - purely cosmetic, no gameplay effect.").push("ambientParticles");
         AMBIENT_WIND_PARTICLE_INTENSITY = builder
                 .comment("Target extra drift speed, in blocks/tick, eased into these particles at strength 100 (scales linearly down to 0 at strength 0). 0 disables the effect.")
-                .defineInRange("ambientWindParticleIntensity", 0.1, 0.0, 2.0);
+                .defineInRange("ambientWindParticleIntensity", 0.2, 0.0, 2.0);
         builder.pop();
 
         SPEC = builder.build();

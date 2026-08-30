@@ -249,7 +249,7 @@ value cached at spawn — matches `AeronauticsWindForceApplier` sampling
 a contraption's own current position rather than the player's) times
 `WindDirection.travelVector(...)`, scaled by
 `AeroWeatherClientConfig.AMBIENT_WIND_PARTICLE_INTENSITY` (target extra
-drift speed in blocks/tick at strength 100; default 0.1, 0 disables the
+drift speed in blocks/tick at strength 100; default 0.2, 0 disables the
 effect entirely — the single fine-tuning knob this feature exposes).
 Returns `null` (skip this tick) when disabled, unsynced for the
 particle's dimension, or the elevation-adjusted strength there is 0.
