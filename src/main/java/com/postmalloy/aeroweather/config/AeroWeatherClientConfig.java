@@ -24,6 +24,7 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue GUST_PARTICLE_MIN_STRENGTH;
     public static final ModConfigSpec.BooleanValue RESTRICT_TO_ACTIVE_CONTRAPTIONS;
     public static final ModConfigSpec.DoubleValue ACTIVE_CONTRAPTION_RADIUS;
+    public static final ModConfigSpec.DoubleValue AMBIENT_WIND_PARTICLE_INTENSITY;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -68,6 +69,12 @@ public final class AeroWeatherClientConfig {
         ACTIVE_CONTRAPTION_RADIUS = builder
                 .comment("Blocks from an active contraption within which wind particles are still allowed to spawn. Only used when restrictToActiveContraptions is enabled.")
                 .defineInRange("activeContraptionRadius", 32.0, 0.0, 512.0);
+        builder.pop();
+
+        builder.comment("Wind influence on vanilla ambient particles (campfire smoke, falling cherry leaves) - purely cosmetic, no gameplay effect.").push("ambientParticles");
+        AMBIENT_WIND_PARTICLE_INTENSITY = builder
+                .comment("Target extra drift speed, in blocks/tick, eased into these particles at strength 100 (scales linearly down to 0 at strength 0). 0 disables the effect.")
+                .defineInRange("ambientWindParticleIntensity", 0.1, 0.0, 2.0);
         builder.pop();
 
         SPEC = builder.build();

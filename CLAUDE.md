@@ -77,9 +77,13 @@ client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
   particle/
-    WindStreakParticle.java           TextureSheetParticle + nested Provider
-    AeroWeatherParticleProviders.java RegisterParticleProvidersEvent registration
+    WindStreakParticle.java           TextureSheetParticle + nested Provider; shared by WIND_STREAK/WIND_GUST/WIND_LOOP
+    AeroWeatherParticleProviders.java RegisterParticleProvidersEvent registration; also overrides vanilla's
+                                       campfire smoke/cherry leaves providers (see below)
     WindParticleSpawner.java          ClientTickEvent.Post: spawns particles around player from ClientWindState
+    AmbientWindDrift.java             pure function: wind-driven target velocity at a Y, for vanilla particle overrides below
+    WindDriftingCampfireSmokeParticle.java  extends vanilla CampfireSmokeParticle, eases toward AmbientWindDrift's target
+    WindDriftingCherryParticle.java   extends vanilla CherryParticle (cherry_leaves), same wind-easing treatment
 
 registry/
   AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST, WIND_LOOP
@@ -174,10 +178,12 @@ speed is clamped to 0.
   or below sea level, reaching base strength at a configurable reference
   height (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 100 blocks), capped
   at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 3x).
-  Kept standalone (not baked into `WindState`) since both
-  `WindParticleSpawner` (client, player's Y) and `AeronauticsWindForceApplier`
-  (server, a contraption's center-of-mass Y) need to sample wind at an
-  arbitrary position, not just the ambient per-dimension value. Curve
+  Kept standalone (not baked into `WindState`) since `WindParticleSpawner`
+  (client, player's Y), `AeronauticsWindForceApplier` (server, a
+  contraption's center-of-mass Y), and `AmbientWindDrift` (client, a
+  vanilla particle's own live Y — see "Ambient particle wind" below)
+  all need to sample wind at an arbitrary position, not just the
+  ambient per-dimension value. Curve
   parameters live in the *common* config (not client) since the server-side
   `/aeroweather wind info` command and the aeronautics force both need them.
 - `weatherBoost` eases (doesn't snap) toward 0/rain-boost/thunder-boost
@@ -202,6 +208,51 @@ speed is clamped to 0.
   immediate on player join/dimension-change/respawn and command
   overrides; otherwise only on a delta threshold (direction Δ > 2°,
   strength Δ ≥ 1) or a ~5s heartbeat — never every tick.
+
+## Ambient particle wind
+
+Wind also nudges two *vanilla* particles — campfire smoke
+(`campfire_cosy_smoke`/`campfire_signal_smoke`) and falling cherry
+leaves (`cherry_leaves`; 1.21.1 has no other vanilla falling-leaves
+particle type, e.g. Pale Garden's pale oak leaves weren't added yet) —
+via `WindDriftingCampfireSmokeParticle`/`WindDriftingCherryParticle`
+(`client/particle/`), each a thin subclass of the corresponding vanilla
+particle class registered *over* vanilla's own provider in
+`AeroWeatherParticleProviders`. This is a supported override, not a
+hack: `ParticleEngine`'s provider map is a plain `HashMap`, vanilla's
+own bootstrap registration runs before `RegisterParticleProvidersEvent`
+fires, and `registerSpriteSet` simply overwrites the map entry — the
+standard mechanism mods use to reskin/modify an existing vanilla
+particle. Both vanilla particle classes have `protected` constructors
+(subclassable across packages) and `protected xd`/`zd` velocity fields
+(inherited from `Particle`, accessible from actual subclass code via
+`this`) — confirmed by decompiling the real classes rather than
+guessing, since `protected` access rules are easy to get subtly wrong
+across packages (e.g. vanilla's own nested `Provider` classes can call
+`particle.setAlpha(...)` only because they live in the *same package*
+as `Particle`; our providers, in a different package, must do that
+setup inside the particle subclass's own constructor instead).
+
+Each subclass overrides `tick()` to ease `xd`/`zd` a small fixed
+fraction (`EASE_FACTOR = 0.02`) toward a wind-driven target velocity
+each tick, then calls `super.tick()` unchanged — the same "ease toward
+a target, don't snap" idiom `WindState` already uses for
+`weatherBoost`, chosen specifically to avoid unbounded runaway drift
+(a per-tick *additive* delta, mirroring how vanilla's own campfire-smoke
+jitter or cherry-leaf curl accumulate, would grow without bound over a
+non-zero-mean push since those particles live 80–330 ticks). The target
+velocity itself — `AmbientWindDrift.targetVelocity(level, y)` — is a
+pure function (no `Particle` field access, so no protected-access
+constraint) computed fresh every tick: elevation-adjusted strength via
+`WindHeightScaling.scale(...)` at the particle's own **live** Y (not a
+value cached at spawn — matches `AeronauticsWindForceApplier` sampling
+a contraption's own current position rather than the player's) times
+`WindDirection.travelVector(...)`, scaled by
+`AeroWeatherClientConfig.AMBIENT_WIND_PARTICLE_INTENSITY` (target extra
+drift speed in blocks/tick at strength 100; default 0.1, 0 disables the
+effect entirely — the single fine-tuning knob this feature exposes).
+Returns `null` (skip this tick) when disabled, unsynced for the
+particle's dimension, or the elevation-adjusted strength there is 0.
 
 ## M7: Aeronautics wind force
 
