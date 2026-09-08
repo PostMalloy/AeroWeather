@@ -33,11 +33,16 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  */
 @Mixin(targets = "com.simibubi.create.content.contraptions.bearing.WindmillBearingBlockEntity", remap = false)
 public abstract class WindmillBearingBlockEntityMixin {
-    @Shadow
-    protected boolean running;
-
+    // Only members declared on WindmillBearingBlockEntity ITSELF may be shadowed. Mixin
+    // resolves @Shadow fields against the target class alone, not its superclasses - an
+    // earlier version shadowed `running` (declared on MechanicalBearingBlockEntity) and
+    // crashed at class-transform time with "@Shadow field running was not located in the
+    // target class". Both members below are declared directly on the target.
     @Shadow
     public abstract void updateGeneratedRotation();
+
+    @Shadow
+    public abstract float getGeneratedSpeed();
 
     /**
      * Recomputed every tick on both sides; read back by
@@ -49,12 +54,13 @@ public abstract class WindmillBearingBlockEntityMixin {
     private float aeroweather$windFactor = 1.0f;
 
     /**
-     * The last factor actually pushed into Create's kinetic network, so a
-     * continuously drifting wind only triggers a rebuild when the quantized
-     * value genuinely moves.
+     * The last generated speed actually pushed into Create's kinetic network, so a
+     * continuously drifting wind only triggers a rebuild when the value Create
+     * itself consumes genuinely moves. Comparing the speed rather than the factor
+     * also means an unassembled bearing (generated speed pinned at 0) never pushes.
      */
     @Unique
-    private float aeroweather$lastPushedFactor = 1.0f;
+    private float aeroweather$lastPushedSpeed;
 
     /**
      * Scales the sail-derived speed by the current wind factor.
@@ -81,7 +87,7 @@ public abstract class WindmillBearingBlockEntityMixin {
     /**
      * HEAD rather than TAIL because {@code tick()} returns early in several
      * places. Pushing the new speed into the kinetic network is server-only and
-     * gated on the quantized factor actually changing — Create's
+     * gated on the generated speed actually changing — Create's
      * {@code updateGeneratedRotation()} detaches and reattaches the whole
      * network and resyncs the block entity, so calling it per tick would be
      * expensive on any sizeable build.
@@ -96,11 +102,15 @@ public abstract class WindmillBearingBlockEntityMixin {
 
         this.aeroweather$windFactor = CreateWindmillWind.speedMultiplier(level, self.getBlockPos(), self.getBlockState());
 
-        if (level.isClientSide || !this.running) {
+        if (level.isClientSide) {
             return;
         }
-        if (this.aeroweather$windFactor != this.aeroweather$lastPushedFactor) {
-            this.aeroweather$lastPushedFactor = this.aeroweather$windFactor;
+        // Reads back through the injector above, so this is the wind-scaled value Create
+        // will actually generate - and it stays 0 for a bearing that isn't running, which
+        // is what keeps unassembled windmills from pushing anything.
+        float generatedSpeed = this.getGeneratedSpeed();
+        if (generatedSpeed != this.aeroweather$lastPushedSpeed) {
+            this.aeroweather$lastPushedSpeed = generatedSpeed;
             this.updateGeneratedRotation();
         }
     }

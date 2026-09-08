@@ -419,6 +419,18 @@ needs, `updateGeneratedRotation()`, has a Create-free `()V` descriptor;
 vanilla `BlockEntity` via the standard `(BlockEntity) (Object) this`
 cast. **Don't "tidy" this into typed references.**
 
+**`@Shadow` only reaches members declared on the target class itself.**
+Mixin resolves shadowed *fields* against `WindmillBearingBlockEntity`
+alone, not its superclasses. Shadowing `running` (declared on
+`MechanicalBearingBlockEntity`) compiled fine and then crashed the client
+at class-transform time with "@Shadow field running was not located in
+the target class" — a `javap` check that confirms a member exists must be
+run against the *target* class, not its parents. The members declared
+directly on the target, and therefore safe to shadow or inject into, are:
+`updateGeneratedRotation()`, `getGeneratedSpeed()`,
+`getAngleSpeedDirection()`, `tick()`, `onSpeedChanged(float)`,
+`lastGeneratedSpeed`, `movementDirection`, `queuedReassembly`.
+
 Two injections:
 - `@ModifyExpressionValue` on the **`getAngleSpeedDirection()` call
   inside `getGeneratedSpeed()`** — deliberately not `@At("RETURN")`.
@@ -429,9 +441,11 @@ Two injections:
   windmill sat detached. Modifying the ±1 direction term only ever
   touches the live sail-count branch.
 - `@Inject` at **HEAD of `tick()`** (not TAIL — `tick()` returns early in
-  several places): recompute the factor on both sides; on the server, if
-  the quantized value changed and the bearing is running, push it with
-  `updateGeneratedRotation()`.
+  several places): recompute the factor on both sides; on the server,
+  compare `getGeneratedSpeed()` against the last value pushed and call
+  `updateGeneratedRotation()` only when it moved. Comparing the generated
+  speed rather than the raw factor tracks exactly what Create consumes,
+  and is 0 for an unassembled bearing, so idle windmills never push.
 
 `@ModifyExpressionValue` is MixinExtras, which NeoForge already bundles
 via jarJar — hence `compileOnly "io.github.llamalad7:mixinextras-neoforge"`
