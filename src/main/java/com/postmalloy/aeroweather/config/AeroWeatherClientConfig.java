@@ -64,10 +64,10 @@ public final class AeroWeatherClientConfig {
                 .comment("Minimum elevation-adjusted wind strength (0-100 scale) required for the WIND_GUST particle type to spawn, on top of the always-on WIND_STREAK particles.")
                 .defineInRange("gustParticleMinStrength", 50.0, 0.0, 100.0);
         RESTRICT_TO_ACTIVE_CONTRAPTIONS = builder
-                .comment("If enabled, wind particles (both types) only spawn near a Sable contraption currently experiencing wind force, instead of ambiently around the player.")
+                .comment("If enabled, wind particles only spawn near something the wind is actually acting on - a Sable contraption currently experiencing wind force, or a Create windmill the wind is currently turning - instead of ambiently around the player.")
                 .define("restrictToActiveContraptions", false);
         ACTIVE_CONTRAPTION_RADIUS = builder
-                .comment("Blocks from an active contraption within which wind particles are still allowed to spawn. Only used when restrictToActiveContraptions is enabled.")
+                .comment("Blocks from a wind-affected contraption or windmill within which wind particles are still allowed to spawn. Only used when restrictToActiveContraptions is enabled.")
                 .defineInRange("activeContraptionRadius", 32.0, 0.0, 512.0);
         builder.pop();
 

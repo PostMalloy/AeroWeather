@@ -57,8 +57,8 @@
   "aeroweather.configuration.directionJitterDegrees": "Directional Jitter (deg)",
   "aeroweather.configuration.outdoorsOnly": "Outdoor Check",
   "aeroweather.configuration.gustParticleMinStrength": "Min Strength for Gust Particles",
-  "aeroweather.configuration.restrictToActiveContraptions": "Restrict to Active Contraptions",
-  "aeroweather.configuration.activeContraptionRadius": "Active Contraption Radius",
+  "aeroweather.configuration.restrictToActiveContraptions": "Only Near Wind-Affected Objects",
+  "aeroweather.configuration.activeContraptionRadius": "Wind-Affected Object Radius",
 
   "aeroweather.configuration.ambientParticles": "Ambient Particle Wind",
   "aeroweather.configuration.ambientWindParticleIntensity": "Wind Intensity",

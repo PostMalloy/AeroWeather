@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.postmalloy.aeroweather.client.ClientActiveWindmills;
 import com.postmalloy.aeroweather.integration.create.CreateWindmillWind;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
@@ -102,13 +103,21 @@ public abstract class WindmillBearingBlockEntityMixin {
 
         this.aeroweather$windFactor = CreateWindmillWind.speedMultiplier(level, self.getBlockPos(), self.getBlockState());
 
-        if (level.isClientSide) {
-            return;
-        }
         // Reads back through the injector above, so this is the wind-scaled value Create
         // will actually generate - and it stays 0 for a bearing that isn't running, which
-        // is what keeps unassembled windmills from pushing anything.
+        // is what keeps unassembled windmills out of both branches below.
         float generatedSpeed = this.getGeneratedSpeed();
+
+        if (level.isClientSide) {
+            // Feeds the particle spawner's "only near wind-affected objects" option. Sable
+            // contraptions have to be broadcast from the server for this; windmills tick
+            // client-side already, so they can just report themselves.
+            if (generatedSpeed != 0.0f) {
+                ClientActiveWindmills.report(level.dimension().location(), self.getBlockPos(), level.getGameTime());
+            }
+            return;
+        }
+
         if (generatedSpeed != this.aeroweather$lastPushedSpeed) {
             this.aeroweather$lastPushedSpeed = generatedSpeed;
             this.updateGeneratedRotation();

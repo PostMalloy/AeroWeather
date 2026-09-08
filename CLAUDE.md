@@ -77,6 +77,8 @@ network/
 client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
+  ClientActiveWindmills.java          client-side set of Create windmills the wind is currently turning; self-reported
+                                       by the windmill mixin (no networking), entries age out after 20 ticks
   particle/
     WindStreakParticle.java           TextureSheetParticle + nested Provider; shared by WIND_STREAK/WIND_GUST/WIND_LOOP
     AeroWeatherParticleProviders.java RegisterParticleProvidersEvent registration; also overrides vanilla's
@@ -309,13 +311,20 @@ makes the force show up correctly on that diagram (`defaultDisplayed = true`).
 
 **Proximity-gated particles** (client-only opt-in, off by default):
 `WindParticleSpawner` can suppress ambient wind particles unless the
-player is within `ACTIVE_CONTRAPTION_RADIUS` of a Sable sub-level
-*currently* experiencing nonzero wind force, gated by
-`RESTRICT_TO_ACTIVE_CONTRAPTIONS`. "Currently experiencing force" reuses
-the same set the 0-lift-blocks hard constraint already produces — a
-contraption with no lift blocks (or zero effective force this tick)
-never enters it, since a position is only recorded when
-`applyWindForce` actually reaches `applyAndRecordPointForce`.
+player is within `ACTIVE_CONTRAPTION_RADIUS` of something the wind is
+*currently* acting on, gated by `RESTRICT_TO_ACTIVE_CONTRAPTIONS`. Two
+independent sources feed that check (see also M9's windmill half):
+- A Sable sub-level currently experiencing nonzero wind force. This
+  reuses the same set the 0-lift-blocks hard constraint already produces
+  — a contraption with no lift blocks (or zero effective force this
+  tick) never enters it, since a position is only recorded when
+  `applyWindForce` actually reaches `applyAndRecordPointForce`.
+- A Create windmill the wind is currently turning (`ClientActiveWindmills`).
+
+Both config keys kept their original `restrictToActiveContraptions` /
+`activeContraptionRadius` names when windmills were folded in — renaming
+them would silently reset existing users' settings, so only the `en_us`
+display strings were broadened.
 
 Plumbing: `AeronauticsWindForceApplier` collects active world-space
 positions (the same `comWorld` already computed for `WindHeightScaling`
@@ -440,6 +449,15 @@ Two injections:
   Scaling at RETURN would compound the factor on every update while a
   windmill sat detached. Modifying the ±1 direction term only ever
   touches the live sail-count branch.
+The same tick injection also feeds the particle proximity gate: on the
+**client** it reports the bearing's position into `ClientActiveWindmills`
+whenever generated speed is nonzero. Windmills need no networking for
+this (unlike Sable sub-levels, which must be broadcast from the server)
+because a windmill bearing is an ordinary block entity that ticks
+client-side too. Entries are timestamped and age out after 20 ticks
+rather than being explicitly removed, so a windmill that stops turning,
+unloads, or is broken drops out on its own with no removal hooks.
+
 - `@Inject` at **HEAD of `tick()`** (not TAIL — `tick()` returns early in
   several places): recompute the factor on both sides; on the server,
   compare `getGeneratedSpeed()` against the last value pushed and call

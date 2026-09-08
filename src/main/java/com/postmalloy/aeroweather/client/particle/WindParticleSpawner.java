@@ -2,6 +2,7 @@ package com.postmalloy.aeroweather.client.particle;
 
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.client.ClientActiveContraptions;
+import com.postmalloy.aeroweather.client.ClientActiveWindmills;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
@@ -55,10 +56,11 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * If {@link AeroWeatherClientConfig#RESTRICT_TO_ACTIVE_CONTRAPTIONS} is
  * enabled, all three particle types are suppressed entirely unless the player
  * is within {@link AeroWeatherClientConfig#ACTIVE_CONTRAPTION_RADIUS} of
- * a Sable sub-level currently experiencing real wind force — synced from
- * {@code AeronauticsWindForceApplier} via {@link ClientActiveContraptions}.
- * Off by default, so ambient particles work exactly as before unless a
- * player opts in.
+ * something the wind is actually acting on: a Sable sub-level currently
+ * experiencing real wind force (synced from {@code AeronauticsWindForceApplier}
+ * via {@link ClientActiveContraptions}) or a Create windmill the wind is
+ * currently turning ({@link ClientActiveWindmills}). Off by default, so ambient
+ * particles work exactly as before unless a player opts in.
  */
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class WindParticleSpawner {
@@ -100,7 +102,7 @@ public final class WindParticleSpawner {
             return;
         }
 
-        if (AeroWeatherClientConfig.RESTRICT_TO_ACTIVE_CONTRAPTIONS.get() && !isNearActiveContraption(level, player)) {
+        if (AeroWeatherClientConfig.RESTRICT_TO_ACTIVE_CONTRAPTIONS.get() && !isNearWindAffectedObject(level, player)) {
             return;
         }
 
@@ -137,25 +139,32 @@ public final class WindParticleSpawner {
 
     /**
      * True if the player is within {@code AeroWeatherClientConfig.ACTIVE_CONTRAPTION_RADIUS}
-     * of any position in {@link ClientActiveContraptions} — Sable sub-levels
-     * currently experiencing actual wind force (0 lift-tagged blocks never
-     * reach this synced list at all, per how the server builds it, so no
-     * separate check is needed here for that case).
+     * of anything the wind is currently acting on — either a Sable sub-level
+     * experiencing actual wind force ({@link ClientActiveContraptions}) or a
+     * Create windmill the wind is currently turning
+     * ({@link ClientActiveWindmills}).
+     * <p>
+     * Both sources are already filtered to things wind is <em>actively</em>
+     * affecting, so nothing extra is needed here: a contraption with no
+     * lift-tagged blocks never enters the synced list, and a windmill that
+     * isn't assembled (or that the wind has stalled) stops reporting itself.
      */
-    private static boolean isNearActiveContraption(ClientLevel level, LocalPlayer player) {
-        ResourceLocation dimension = ClientActiveContraptions.dimension();
-        if (dimension == null || !dimension.equals(level.dimension().location())) {
-            return false;
-        }
+    private static boolean isNearWindAffectedObject(ClientLevel level, LocalPlayer player) {
+        ResourceLocation levelDimension = level.dimension().location();
         double radius = AeroWeatherClientConfig.ACTIVE_CONTRAPTION_RADIUS.getAsDouble();
-        double radiusSq = radius * radius;
         Vec3 playerPos = player.position();
-        for (Vec3 position : ClientActiveContraptions.positions()) {
-            if (playerPos.distanceToSqr(position) <= radiusSq) {
-                return true;
+
+        ResourceLocation contraptionDimension = ClientActiveContraptions.dimension();
+        if (levelDimension.equals(contraptionDimension)) {
+            double radiusSq = radius * radius;
+            for (Vec3 position : ClientActiveContraptions.positions()) {
+                if (playerPos.distanceToSqr(position) <= radiusSq) {
+                    return true;
+                }
             }
         }
-        return false;
+
+        return ClientActiveWindmills.isWithinRadiusOfAny(levelDimension, playerPos, radius, level.getGameTime());
     }
 
     private static void spawnOne(ClientLevel level, LocalPlayer player, float directionDeg, float strength, SimpleParticleType particleType) {
