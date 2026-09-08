@@ -38,6 +38,13 @@
   "aeroweather.configuration.oscillationAmplitude": "Amplitude of Oscillation",
   "aeroweather.configuration.oscillationPeriodSeconds": "Period of Oscillation (sec)",
 
+  "aeroweather.configuration.windmills": "Windmill Settings",
+  "aeroweather.configuration.windmillsEnabled": "Wind Affects Windmills",
+  "aeroweather.configuration.windmillFullSpeedStrength": "Strength for Full Speed",
+  "aeroweather.configuration.windmillMaxSpeedMultiplier": "Speed Multiplier (max)",
+  "aeroweather.configuration.windmillMinDirectionalScale": "Scale When Facing Away",
+  "aeroweather.configuration.windmillReverseWhenBehind": "Reverse on Wind From Behind",
+
   "aeroweather.configuration.particles": "Particle Settings",
   "aeroweather.configuration.enabled": "enabled",
   "aeroweather.configuration.minRadius": "Spawn Radius (min)",

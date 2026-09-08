@@ -57,6 +57,7 @@ config/
 
 wind/
   WindDirection.java                  cardinal enum + degree/vector helpers; travelVector(bearingDeg) -> Vec3
+  WindmillWindResponse.java           pure function: (facing, wind, strength) -> quantized Create windmill speed multiplier
   WindState.java                      direction/strength + drift target + gust + weather-boost + override; NBT I/O
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
@@ -103,6 +104,15 @@ integration/
     AeronauticsWindForceApplier.java  ONLY class allowed to reference Create/Aeronautics/Sable types directly
     AeronauticsIntegration.java       static get(); resolve() checks ModCompat.isLoaded("sable") BEFORE
                                        constructing AeronauticsWindForceApplier, catch(Throwable) -> Noop
+  create/
+    CreateWindmillWind.java           side-aware wind lookup behind the windmill mixin; zero Create types,
+                                       always safe to classload (see M9)
+
+mixin/
+  AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds the windmill mixin unless
+                                       LoadingModList says "create" is installed
+  WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
+                                       string target/descriptor, never by type (see M9)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -331,6 +341,111 @@ broadcasts. `applyWindForce` takes a nullable `activePositions` list and
 just skips recording when null; force application itself still runs
 every substep regardless.
 
+## M9: Create windmill wind response
+
+Wind drives **Create windmill bearings**: their normal sail-count speed
+is multiplied by a signed factor derived from the wind at the windmill's
+own position. Gated on `create` being loaded, with no effect otherwise.
+
+`wind/WindmillWindResponse.java` is the pure function (config-free,
+params passed in, mirroring `WindHeightScaling`):
+
+```
+strengthFactor = min(adjustedStrength / fullSpeedStrength, maxSpeedMultiplier)
+intoFront      = -dot(windTravelUnit, facingUnit)   # +1 = straight into the front face
+angle          = acos(intoFront)                    # 0..180
+offAxis        = min(angle, 180 - angle)            # 0..90
+magnitude      = offAxis <= 45 ? 1 : lerp(1, minDirectionalScale, (offAxis - 45) / 45)
+directionFactor = (angle > 90 && reverseWhenBehind) ? -magnitude : magnitude
+multiplier     = quantize(strengthFactor * directionFactor)
+```
+
+- The windmill's **front face normal is its block's
+  `BlockStateProperties.FACING`** — Create's `BearingBlock` extends
+  `DirectionalKineticBlock`, whose `FACING` *is* the vanilla property
+  instance, and it points from the bearing toward the sails (confirmed
+  via `hasShaftTowards` returning `FACING.getOpposite()`). So facing is
+  readable with zero Create imports.
+- **Vertical-axis windmills (facing UP/DOWN) skip the directional factor
+  entirely.** Horizontal wind is always perpendicular to their axis, so
+  applying the rule would peg every horizontal-rotor build at
+  `minDirectionalScale` (0 by default) permanently.
+- **Quantized to 0.05 steps.** This is load-bearing, not a nicety:
+  Create's `updateGeneratedRotation()` runs `detachKinetics()` /
+  `setSpeed()` / `attachKinetics()` plus a stress recalc and a block
+  entity resync — a full kinetic-network rebuild across every connected
+  shaft. Only a coarse step function of the continuously drifting wind
+  may drive it. Quantizing also keeps the client's and server's
+  independently computed factors agreeing despite the sync thresholds.
+- `AeroWeatherCommonConfig`'s `windmills` section is **common, not
+  client**: the client computes the same multiplier to spin the sails
+  visually (see below), so both sides must read identical values.
+
+### Why it must run on both sides
+
+`MechanicalBearingBlockEntity.getAngularSpeed()` is
+`convertToAngular(isWindmill() ? getGeneratedSpeed() : getSpeed())` —
+for a windmill the *visual* rotation comes from `getGeneratedSpeed()`,
+not the synced network speed, and it runs client-side too. So
+`CreateWindmillWind.speedMultiplier(...)` reads `WindSavedData` on the
+server and `ClientWindState` on the client. That same method zeroes out
+when `getSpeed() == 0`, which is what makes scale-to-0 genuinely stop a
+windmill rather than just slowing it.
+
+Dropping to 0 is safe from auto-disassembly:
+`WindmillBearingBlockEntity.onSpeedChanged` saves and restores
+`assembleNextTick`, deliberately cancelling the `assembleNextTick = true`
+that `MechanicalBearingBlockEntity.onSpeedChanged` sets. Sign flips call
+`contraption.stop(level)` only when `prevSpeed != 0` — and with the
+default `minDirectionalScale = 0` the windmill always passes *through*
+zero before reversing, so reversal is naturally smooth. That only stops
+being true if the floor is raised above 0.
+
+### The mixin (the codebase's only one)
+
+There is **no Create API for generated speed** — `api/event/` has only
+`BlockEntityBehaviourEvent`/`PipeCollisionEvent`/`TrackGraphMergeEvent`,
+and `api/stress/BlockStressValues.RPM` is a display/tooltip registry.
+Manipulating sail count instead was rejected: Create clamps to `min 1`
+RPM, so it can never reach 0. A mixin is the only mechanism.
+
+`mixin/WindmillBearingBlockEntityMixin.java` references Create **only by
+string target and descriptor, never by type** — so Create stays
+`localRuntime`, never a compile dependency (compiling against
+`WindmillBearingBlockEntity` would drag catnip/registrate/ponder/flywheel
+onto the compile classpath). This works because the one Create method it
+needs, `updateGeneratedRotation()`, has a Create-free `()V` descriptor;
+`running` is a plain `protected boolean`; and position/facing come from
+vanilla `BlockEntity` via the standard `(BlockEntity) (Object) this`
+cast. **Don't "tidy" this into typed references.**
+
+Two injections:
+- `@ModifyExpressionValue` on the **`getAngleSpeedDirection()` call
+  inside `getGeneratedSpeed()`** — deliberately not `@At("RETURN")`.
+  `getGeneratedSpeed()` returns a cached `lastGeneratedSpeed` early when
+  the contraption entity is detached, and `updateGeneratedRotation()`
+  fills that cache *from `getGeneratedSpeed()` itself* — already scaled.
+  Scaling at RETURN would compound the factor on every update while a
+  windmill sat detached. Modifying the ±1 direction term only ever
+  touches the live sail-count branch.
+- `@Inject` at **HEAD of `tick()`** (not TAIL — `tick()` returns early in
+  several places): recompute the factor on both sides; on the server, if
+  the quantized value changed and the bearing is running, push it with
+  `updateGeneratedRotation()`.
+
+`@ModifyExpressionValue` is MixinExtras, which NeoForge already bundles
+via jarJar — hence `compileOnly "io.github.llamalad7:mixinextras-neoforge"`
+pinned to the version NeoForge ships. Note the group id is
+`io.github.llamalad7` but the **package is `com.llamalad7`**.
+
+`aeroweather.mixins.json` declares an **empty `mixins` array** on
+purpose; `AeroWeatherMixinPlugin.getMixins()` supplies it, returning the
+windmill mixin only when `LoadingModList.get().getModFileById("create")`
+is non-null. Naming it in the JSON would make Mixin resolve the target
+class at config-prepare time and fail outright when Create is absent.
+The plugin spells the modid out itself rather than importing
+`ModCompat`, so nothing pulls `ModList` onto the classloader that early.
+
 ## Command reference
 
 ```
@@ -359,7 +474,15 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   NeoForge at mod-init regardless of intent, which would force-classload
   Sable's event types even when Sable isn't installed. Do not "clean
   this up" to the usual annotation pattern.
-- Build dependency pattern: only Sable needs `compileOnly`+`localRuntime`
+- **Second sanctioned exception (M9)**: `mixin/WindmillBearingBlockEntityMixin`
+  targets a Create class. It doesn't break the rule above because it
+  names Create purely by *string* target/descriptor and never by type,
+  and because `AeroWeatherMixinPlugin` withholds it entirely when Create
+  is absent — a gate that fires before classload, so it's strictly
+  stronger than the `ModCompat` runtime check. Its helper,
+  `integration/create/CreateWindmillWind`, contains no Create references
+  at all and is always safe to classload.
+- Build dependency pattern: Sable needs `compileOnly`+`localRuntime`
   (it's the actual API surface used — Sable's sub-level API is
   content-agnostic, so AeroWeather doesn't need Create/Create Aeronautics
   as a compile dependency at all, only `localRuntime` for dev-client
@@ -390,7 +513,9 @@ but don't actively make future extension harder either:
 
 - New weather pattern types (tornadoes, custom storms, etc.)
 - New blocks/items (wind vanes, anemometers, etc.)
-- Anything beyond wind simulation + its Create Aeronautics interaction
+- Anything beyond wind simulation + its Create/Create Aeronautics
+  interaction (windmill response and contraption force are in scope;
+  other Create kinetic generators are not)
 
 ## Roadmap / milestones
 
@@ -403,6 +528,18 @@ and fixed two real bugs: the `onSubLevelAdded` lift-ratio timing issue
 and the contraption-diagram disconnect from an unregistered
 `ForceGroup` — both documented above/in "External references"). See
 `git log` for detailed history of each milestone.
+
+**M9 (Create windmill wind response, see the section above) is written
+and compile-verified, but NOT yet live-tested.** Unlike every earlier
+milestone, compiling proves less here: a mixin's injection points are
+only resolved at class-transform time. What *has* been verified
+statically, against Create 6.0.10's actual bytecode: `getGeneratedSpeed()`
+really does `invokevirtual getAngleSpeedDirection:()F`, and
+`tick()`/`updateGeneratedRotation()`/`running` all exist with the
+descriptors the mixin shadows. Still unverified until someone runs it:
+that Mixin applies cleanly in a dev client, that windmill speed/direction
+behave as intended in-game, and that a **without-Create** launch still
+boots (the config-plugin gate).
 
 ## External references
 

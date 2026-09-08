@@ -158,6 +158,11 @@ dependencies {
     // question (ModDevGradle 2.0.144's exact jarJar DSL, per CLAUDE.md) — deferred to M7.
     implementation "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${sable_companion_version}"
 
+    // MixinExtras, for the Create windmill mixin's @ModifyExpressionValue (see
+    // WindmillBearingBlockEntityMixin). compileOnly only: NeoForge already bundles this exact
+    // artifact via jarJar, so shipping our own copy would be a duplicate at runtime.
+    compileOnly "io.github.llamalad7:mixinextras-neoforge:${mixinextras_version}"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"

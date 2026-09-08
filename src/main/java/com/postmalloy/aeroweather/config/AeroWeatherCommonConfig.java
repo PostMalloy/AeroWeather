@@ -44,6 +44,12 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue AERONAUTICS_OSCILLATION_AMPLITUDE;
     public static final ModConfigSpec.DoubleValue AERONAUTICS_OSCILLATION_PERIOD_SECONDS;
 
+    public static final ModConfigSpec.BooleanValue WINDMILLS_ENABLED;
+    public static final ModConfigSpec.DoubleValue WINDMILL_FULL_SPEED_STRENGTH;
+    public static final ModConfigSpec.DoubleValue WINDMILL_MAX_SPEED_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue WINDMILL_MIN_DIRECTIONAL_SCALE;
+    public static final ModConfigSpec.BooleanValue WINDMILL_REVERSE_WHEN_BEHIND;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -149,6 +155,30 @@ public final class AeroWeatherCommonConfig {
         AERONAUTICS_OSCILLATION_PERIOD_SECONDS = builder
                 .comment("Seconds for one full oscillation cycle.")
                 .defineInRange("oscillationPeriodSeconds", 2.0, 0.1, 600.0);
+        builder.pop();
+
+        builder.comment(
+                "How wind drives Create windmill bearings (M9). Their normal sail-count speed is",
+                "multiplied by the elevation-adjusted wind strength at the windmill, then by how",
+                "squarely the wind meets the windmill's front face. Requires Create to be installed;",
+                "has no effect otherwise. Server-authoritative: the client computes the same",
+                "multiplier to spin the sails visually, so both sides must agree on these values."
+        ).push("windmills");
+        WINDMILLS_ENABLED = builder
+                .comment("Whether wind affects Create windmill speed at all. When false, windmills behave exactly as vanilla Create.")
+                .define("windmillsEnabled", true);
+        WINDMILL_FULL_SPEED_STRENGTH = builder
+                .comment("Elevation-adjusted wind strength at which a windmill spins at its normal (unmodified) Create speed. Defaults to the clear-weather strength cap.")
+                .defineInRange("windmillFullSpeedStrength", 50.0, 1.0, 100.0);
+        WINDMILL_MAX_SPEED_MULTIPLIER = builder
+                .comment("Upper bound on the wind speed multiplier. Above 1.0, strong wind overspeeds windmills past their sail rating (1.5 is reached at adjusted strength 75, the rain cap).")
+                .defineInRange("windmillMaxSpeedMultiplier", 1.5, 0.0, 5.0);
+        WINDMILL_MIN_DIRECTIONAL_SCALE = builder
+                .comment("What the speed multiplier falls to when wind runs exactly parallel to the windmill's face. 0 stops it completely; 1 disables directional dampening. Wind within 45 degrees of the face normal is never dampened.")
+                .defineInRange("windmillMinDirectionalScale", 0.0, 0.0, 1.0);
+        WINDMILL_REVERSE_WHEN_BEHIND = builder
+                .comment("Whether wind arriving at the back of a windmill spins it in the opposite direction, instead of driving it forwards regardless of which face it hits.")
+                .define("windmillReverseWhenBehind", true);
         builder.pop();
 
         SPEC = builder.build();

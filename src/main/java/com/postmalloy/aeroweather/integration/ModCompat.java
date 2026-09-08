@@ -11,6 +11,7 @@ import net.neoforged.fml.ModList;
  */
 public final class ModCompat {
     public static final String SABLE_MODID = "sable";
+    public static final String CREATE_MODID = "create";
 
     private ModCompat() {
     }
