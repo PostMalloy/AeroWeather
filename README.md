@@ -15,13 +15,13 @@ Create windmills can now be affected by local wind speed, both in speed (and the
 Perhaps most importantly, wind will impart force on Create Aeronautics contraptions. The force of the wind is calculated via the cross-sectional area of the contraption that faces the wind, and scaled by the proportion of balloon, levitite, or wing-like blocks on your contraption to the proportion of non-lifting blocks. This means that contraptions without any of these blocks (such as cars, mining machines, etc) are unaffected by the wind, while contraptions like hot air balloons are most affected by it. 
 
 <p align="center">
-  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex1.gif" width="100%" />
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex1.gif" width="50%" />
 </p>
 
 The mod now includes a few utility blocks that can help your aeronautics creations to perform well with the new wind feature. Wind vanes (zinc and brass variants) point in the direction of the wind, and the brass vane outputs a redstone signal with variable strength in the direction(s) of the wind. The stronger the wind, the stronger the signal. Both blocks also work when held!
 
 <p align="center">
-  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex2.gif" width="100%" />
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex2.gif" width="50%" />
 </p>
 
 ## Commands
