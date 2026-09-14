@@ -50,6 +50,8 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue WINDMILL_MIN_DIRECTIONAL_SCALE;
     public static final ModConfigSpec.BooleanValue WINDMILL_REVERSE_WHEN_BEHIND;
 
+    public static final ModConfigSpec.DoubleValue WIND_VANE_FULL_SIGNAL_STRENGTH;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -179,6 +181,16 @@ public final class AeroWeatherCommonConfig {
         WINDMILL_REVERSE_WHEN_BEHIND = builder
                 .comment("Whether wind arriving at the back of a windmill spins it in the opposite direction, instead of driving it forwards regardless of which face it hits.")
                 .define("windmillReverseWhenBehind", true);
+        builder.pop();
+
+        builder.comment(
+                "How the brass wind vane turns wind into a redstone signal (M10). Server-authoritative:",
+                "the server computes the signal, and the client reads the same value to pace both vanes'",
+                "swing, so a brass vane's swing agrees with its signal."
+        ).push("windVane");
+        WIND_VANE_FULL_SIGNAL_STRENGTH = builder
+                .comment("Elevation-adjusted wind strength at which a brass wind vane outputs a full redstone signal of 15, scaling linearly down to 0 in calm air. Also the strength at which either vane swings toward the wind at full speed. Defaults to windmillFullSpeedStrength, so the wind that runs a windmill at full speed also maxes a vane.")
+                .defineInRange("windVaneFullSignalStrength", 50.0, 1.0, 300.0);
         builder.pop();
 
         SPEC = builder.build();

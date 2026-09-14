@@ -3,6 +3,7 @@ package com.postmalloy.aeroweather.wind;
 import java.util.Locale;
 import java.util.Optional;
 
+import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -12,8 +13,11 @@ import net.minecraft.world.phys.Vec3;
  * provides the angle math the wind simulation needs. The bearing is the
  * direction wind is blowing FROM, matching real-world convention (a
  * "north wind" blows out of the north).
+ * <p>
+ * Also backs the wind vane's 8-way {@code wind_from} blockstate property,
+ * hence {@link StringRepresentable}.
  */
-public enum WindDirection {
+public enum WindDirection implements StringRepresentable {
     NORTH(0, "n"),
     NORTHEAST(45, "ne"),
     EAST(90, "e"),
@@ -37,6 +41,11 @@ public enum WindDirection {
 
     public String displayName() {
         return name().charAt(0) + name().substring(1).toLowerCase(Locale.ROOT);
+    }
+
+    @Override
+    public String getSerializedName() {
+        return name().toLowerCase(Locale.ROOT);
     }
 
     /** Matches a full name ("northeast") or abbreviation ("ne"), case-insensitively. */
@@ -81,5 +90,16 @@ public enum WindDirection {
     public static Vec3 travelVector(float bearingDeg) {
         double bearingRad = Math.toRadians(bearingDeg);
         return new Vec3(-Math.sin(bearingRad), 0.0, Math.cos(bearingRad));
+    }
+
+    /**
+     * The compass bearing a vector points toward, in [0, 360) - the inverse of
+     * {@link #travelVector} applied to a FROM vector, so
+     * {@code bearingOf(travelVector(b).reverse()) == b}. Only X and Z are used, so
+     * a vector with a vertical component gives the bearing of its horizontal
+     * projection.
+     */
+    public static float bearingOf(Vec3 vector) {
+        return normalizeDegrees((float) Math.toDegrees(Math.atan2(vector.x, -vector.z)));
     }
 }

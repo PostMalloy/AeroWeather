@@ -163,6 +163,11 @@ dependencies {
     // artifact via jarJar, so shipping our own copy would be a duplicate at runtime.
     compileOnly "io.github.llamalad7:mixinextras-neoforge:${mixinextras_version}"
 
+    // GeckoLib (M10): renders the wind vane block's animated model. A REQUIRED dependency,
+    // unlike Sable/Create above - declared type="required" in neoforge.mods.toml, so no
+    // ModCompat gate is needed around it. `implementation` so it's on the dev runtime too.
+    implementation "maven.modrinth:geckolib:${geckolib_version}"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"

@@ -48,11 +48,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.registries.RegisterEvent;
 
 /**
- * The only class in AeroWeather allowed to reference Sable (or Create/
- * Create Aeronautics/Sable Companion) types directly — see CLAUDE.md's
- * soft-dependency isolation rule. Only ever constructed by
- * {@link AeronauticsIntegration} after {@link ModCompat#isLoaded} has
- * confirmed Sable is present.
+ * One of only two classes in AeroWeather allowed to reference Sable (or
+ * Create/Create Aeronautics/Sable Companion) types directly — the other is
+ * {@link SableSubLevelFrames}; see CLAUDE.md's soft-dependency isolation
+ * rule. Only ever constructed by {@link AeronauticsIntegration} after
+ * {@link ModCompat#isLoaded} has confirmed Sable is present.
  * <p>
  * Event registration in {@link #start} is deliberately manual/instance-
  * based ({@code NeoForge.EVENT_BUS.addListener(...)}), NOT this

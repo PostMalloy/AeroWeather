@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "aeroweather:block/zinc_wind_vane"
+    }
+  }
+}

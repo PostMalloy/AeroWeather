@@ -1,16 +1,11 @@
 package com.postmalloy.aeroweather.integration.create;
 
-import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
-import com.postmalloy.aeroweather.wind.WindHeightScaling;
-import com.postmalloy.aeroweather.wind.WindSavedData;
-import com.postmalloy.aeroweather.wind.WindState;
+import com.postmalloy.aeroweather.wind.LocalWind;
 import com.postmalloy.aeroweather.wind.WindmillWindResponse;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -31,9 +26,11 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * {@code MechanicalBearingBlockEntity.getAngularSpeed()} feeds a windmill's
  * <em>visual</em> rotation from {@code getGeneratedSpeed()} too — so the client
  * has to reach the same multiplier as the server or the sails would spin at a
- * different rate than the kinetic network they drive. Server reads the
- * authoritative {@link WindSavedData}; client reads its synced
- * {@link ClientWindState} cache.
+ * different rate than the kinetic network they drive. {@link LocalWind} handles
+ * that split (authoritative server wind vs the client's synced copy), and also
+ * makes a windmill riding a Sable ship read the ship's real altitude and a
+ * bearing in the ship's own frame — the same frame the bearing's {@code FACING}
+ * lives in. For a windmill in an ordinary world the result is unchanged.
  */
 public final class CreateWindmillWind {
     private CreateWindmillWind() {
@@ -51,29 +48,13 @@ public final class CreateWindmillWind {
         if (!state.hasProperty(BlockStateProperties.FACING)) {
             return 1.0f;
         }
+        LocalWind.Sample wind = LocalWind.at(level, pos);
+        if (wind == null) {
+            return 1.0f;
+        }
         Direction facing = state.getValue(BlockStateProperties.FACING);
 
-        float directionDeg;
-        float baseStrength;
-        if (level instanceof ServerLevel serverLevel) {
-            WindState wind = WindSavedData.get(serverLevel).wind();
-            directionDeg = wind.directionDeg();
-            baseStrength = wind.strength();
-        } else {
-            ResourceLocation syncedDimension = ClientWindState.dimension();
-            if (syncedDimension == null || !syncedDimension.equals(level.dimension().location())) {
-                return 1.0f;
-            }
-            directionDeg = ClientWindState.directionDeg();
-            baseStrength = ClientWindState.strength();
-        }
-
-        float adjustedStrength = WindHeightScaling.scale(baseStrength, pos.getY(), level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
-
-        return WindmillWindResponse.multiplier(facing, directionDeg, adjustedStrength,
+        return WindmillWindResponse.multiplier(facing, wind.directionDeg(), wind.adjustedStrength(),
                 AeroWeatherCommonConfig.WINDMILL_FULL_SPEED_STRENGTH.getAsDouble(),
                 AeroWeatherCommonConfig.WINDMILL_MAX_SPEED_MULTIPLIER.getAsDouble(),
                 AeroWeatherCommonConfig.WINDMILL_MIN_DIRECTIONAL_SCALE.getAsDouble(),

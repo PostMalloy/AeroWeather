@@ -1,0 +1,27 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "create"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "c": {
+      "item": "create:andesite_casing"
+    },
+    "z": {
+      "item": "create:zinc_nugget"
+    }
+  },
+  "pattern": [
+    "zzz",
+    " z ",
+    "ccc"
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeroweather:zinc_wind_vane"
+  }
+}

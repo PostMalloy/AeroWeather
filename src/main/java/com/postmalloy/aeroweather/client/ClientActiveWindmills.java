@@ -34,20 +34,32 @@ public final class ClientActiveWindmills {
      */
     private static final long STALE_AFTER_TICKS = 20L;
 
-    private static final Map<BlockPos, Long> LAST_SEEN_TICK = new ConcurrentHashMap<>();
+    /**
+     * Keyed by the bearing's own block position - a stable identity, even for a
+     * windmill riding a Sable ship - while each sighting records where the
+     * windmill actually is in the world. The two differ on a ship: there the
+     * bearing's own BlockPos is a far-away plot coordinate, and the ship moves.
+     */
+    private static final Map<BlockPos, Sighting> SIGHTINGS = new ConcurrentHashMap<>();
 
     private static ResourceLocation dimension;
 
     private ClientActiveWindmills() {
     }
 
-    /** Records that the windmill at {@code pos} is currently being turned by the wind. */
-    public static void report(ResourceLocation dimension, BlockPos pos, long gameTime) {
+    private record Sighting(Vec3 worldPosition, long gameTime) {
+    }
+
+    /**
+     * Records that the windmill whose bearing is at {@code pos} is currently
+     * being turned by the wind, and is actually located at {@code worldPosition}.
+     */
+    public static void report(ResourceLocation dimension, BlockPos pos, Vec3 worldPosition, long gameTime) {
         if (!dimension.equals(ClientActiveWindmills.dimension)) {
             ClientActiveWindmills.dimension = dimension;
-            LAST_SEEN_TICK.clear();
+            SIGHTINGS.clear();
         }
-        LAST_SEEN_TICK.put(pos.immutable(), gameTime);
+        SIGHTINGS.put(pos.immutable(), new Sighting(worldPosition, gameTime));
     }
 
     /**
@@ -62,25 +74,18 @@ public final class ClientActiveWindmills {
 
         double radiusSq = radius * radius;
         boolean near = false;
-        Iterator<Map.Entry<BlockPos, Long>> entries = LAST_SEEN_TICK.entrySet().iterator();
-        while (entries.hasNext()) {
-            Map.Entry<BlockPos, Long> entry = entries.next();
-            if (gameTime - entry.getValue() > STALE_AFTER_TICKS) {
-                entries.remove();
+        Iterator<Sighting> sightings = SIGHTINGS.values().iterator();
+        while (sightings.hasNext()) {
+            Sighting sighting = sightings.next();
+            if (gameTime - sighting.gameTime() > STALE_AFTER_TICKS) {
+                sightings.remove();
                 continue;
             }
-            if (!near && isWithin(entry.getKey(), position, radiusSq)) {
+            if (!near && sighting.worldPosition().distanceToSqr(position) <= radiusSq) {
                 // Keep iterating rather than returning early, so the prune finishes.
                 near = true;
             }
         }
         return near;
-    }
-
-    private static boolean isWithin(BlockPos pos, Vec3 position, double radiusSq) {
-        double dx = pos.getX() + 0.5 - position.x;
-        double dy = pos.getY() + 0.5 - position.y;
-        double dz = pos.getZ() + 0.5 - position.z;
-        return dx * dx + dy * dy + dz * dz <= radiusSq;
     }
 }

@@ -28,6 +28,7 @@ this list if they ever diverge.
 - ModDevGradle plugin `2.0.144`
 - Java 21 toolchain, Gradle `9.2.1`
 - Mojang mappings + Parchment `2024.11.17`
+- GeckoLib `4.9.2` — a **required** dependency, unlike Create/Sable (renders the wind vane, M10)
 - `mod_id=aeroweather`, `mod_group_id=com.postmalloy.aeroweather`
 - License: MIT
 
@@ -43,20 +44,32 @@ this list if they ever diverge.
 
 ## Package structure
 
-Root package `com.postmalloy.aeroweather`. All milestones through M8 are
-complete (see Roadmap); this table is the actual, current structure —
-keep it in sync as code changes.
+Root package `com.postmalloy.aeroweather`. All milestones through M9 are
+complete, and M10 (the wind vane) is written (see Roadmap); this table is
+the actual, current structure — keep it in sync as code changes.
 
 ```
 AeroWeather.java                      main @Mod class: registries, config, subsystem bootstrap
 AeroWeatherClient.java                 client @Mod entry: config screen registration
 
+block/
+  WindVaneBlock.java                  the zinc vane: BaseEntityBlock, ENTITYBLOCK_ANIMATED, no blockstate properties,
+                                       client ticker only - a visual indicator with no redstone (see M10)
+  BrassWindVaneBlock.java             extends WindVaneBlock: adds POWER + 8-way WIND_FROM blockstate, weak redstone
+                                       from the upwind face(s), 20-tick server ticker
+  WindVaneBlockEntity.java            GeoBlockEntity shared by both vanes; client-only transient heading, eased toward LocalWind
+  WindVaneBlockItem.java              BlockItem + GeoItem for both vanes; same geo, texture named after its block
+
 config/
-  AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds, aeronautics force tuning
+  AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds,
+                                       aeronautics force, windmill and wind vane tuning
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption gating
 
 wind/
-  WindDirection.java                  cardinal enum + degree/vector helpers; travelVector(bearingDeg) -> Vec3
+  WindDirection.java                  cardinal enum (StringRepresentable, backs WIND_FROM) + degree/vector helpers;
+                                       travelVector(bearingDeg) -> Vec3, and its inverse bearingOf(Vec3)
+  LocalWind.java                      wind as seen from one block's own grid, both sides, Sable-ship aware; shared
+                                       by the wind vane and Create windmills (see M10)
   WindmillWindResponse.java           pure function: (facing, wind, strength) -> quantized Create windmill speed multiplier
   WindState.java                      direction/strength + drift target + gust + weather-boost + override; NBT I/O
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
@@ -78,7 +91,8 @@ client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
   ClientActiveWindmills.java          client-side set of Create windmills the wind is currently turning; self-reported
-                                       by the windmill mixin (no networking), entries age out after 20 ticks
+                                       by the windmill mixin (no networking), keyed by bearing position but located at
+                                       its world position (ship-aware); entries age out after 20 ticks
   particle/
     WindStreakParticle.java           TextureSheetParticle + nested Provider; shared by WIND_STREAK/WIND_GUST/WIND_LOOP
     AeroWeatherParticleProviders.java RegisterParticleProvidersEvent registration; also overrides vanilla's
@@ -87,10 +101,20 @@ client/
     AmbientWindDrift.java             pure function: wind-driven target velocity at a Y, for vanilla particle overrides below
     WindDriftingCampfireSmokeParticle.java  extends vanilla CampfireSmokeParticle, eases toward AmbientWindDrift's target
     WindDriftingCherryParticle.java   extends vanilla CherryParticle (cherry_leaves), same wind-easing treatment
+  render/
+    WindVaneGeoModel.java             DefaultedBlockGeoModel; turns the "vane" bone to the block entity's heading, and
+                                       picks each vane's texture by its block id (one geo shared by both)
+    WindVaneRenderer.java             GeoBlockRenderer; widens getRenderBoundingBox (Sable culls ships with it too)
+    WindVaneItemRenderer.java         GeoItemRenderer; points the item's vane into the wind from the live render
+                                       transform (hands, frames, ground); rests it in the GUI
+    AeroWeatherBlockEntityRenderers.java  EntityRenderersEvent.RegisterRenderers registration
 
 registry/
   AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST, WIND_LOOP
   AeroWeatherCommandArgumentTypes.java  DeferredRegister<ArgumentTypeInfo<?,?>>: registers DirectionArgument for command-tree sync
+  AeroWeatherBlocks.java              DeferredRegister.Blocks: ZINC_WIND_VANE, BRASS_WIND_VANE (copper sounds, pickaxe, strength 3)
+  AeroWeatherItems.java               DeferredRegister.Items: both vanes; brass in the Redstone Blocks tab, zinc in Functional Blocks
+  AeroWeatherBlockEntityTypes.java    DeferredRegister<BlockEntityType<?>>: WIND_VANE, one type valid for both vane blocks
 
 command/
   AeroWeatherCommand.java             /aeroweather wind <direction> <strength> | reset | info  (op-level)
@@ -103,11 +127,14 @@ integration/
     WindForceApplier.java             interface: start(IEventBus modEventBus) — not a per-tick method; the real
                                        applier drives itself off Sable's own physics-tick event once started
     NoopWindForceApplier.java         start() no-op
-    AeronauticsWindForceApplier.java  ONLY class allowed to reference Create/Aeronautics/Sable types directly
+    AeronauticsWindForceApplier.java  one of only two classes allowed to reference Sable types (see isolation rule)
     AeronauticsIntegration.java       static get(); resolve() checks ModCompat.isLoaded("sable") BEFORE
                                        constructing AeronauticsWindForceApplier, catch(Throwable) -> Noop
+    SubLevelFrames.java               Sable-free interface + lazy holder: frameAt(Level, BlockPos) -> the block's world
+                                       position and a world-to-local direction rotation, or null off-ship / without Sable
+    SableSubLevelFrames.java          the Sable-backed implementation; the second class allowed to reference Sable types
   create/
-    CreateWindmillWind.java           side-aware wind lookup behind the windmill mixin; zero Create types,
+    CreateWindmillWind.java           windmill speed multiplier from LocalWind (so ship-aware); zero Create types,
                                        always safe to classload (see M9)
 
 mixin/
@@ -422,9 +449,9 @@ RPM, so it can never reach 0. A mixin is the only mechanism.
 string target and descriptor, never by type** — so Create stays
 `localRuntime`, never a compile dependency (compiling against
 `WindmillBearingBlockEntity` would drag catnip/registrate/ponder/flywheel
-onto the compile classpath). This works because the one Create method it
-needs, `updateGeneratedRotation()`, has a Create-free `()V` descriptor;
-`running` is a plain `protected boolean`; and position/facing come from
+onto the compile classpath). This works because the two Create methods it
+shadows, `updateGeneratedRotation()` and `getGeneratedSpeed()`, have
+Create-free `()V`/`()F` descriptors; and position/facing come from
 vanilla `BlockEntity` via the standard `(BlockEntity) (Object) this`
 cast. **Don't "tidy" this into typed references.**
 
@@ -478,6 +505,202 @@ class at config-prepare time and fail outright when Create is absent.
 The plugin spells the modid out itself rather than importing
 `ModCompat`, so nothing pulls `ModList` onto the classloader that early.
 
+## M10: Wind vane
+
+Two placeable blocks sharing one model: a static base, and a
+GeckoLib-animated vane that points **into** the wind (where it blows
+FROM, like a real weathervane — matching how AeroWeather names wind
+everywhere). The **zinc** vane (`zinc_wind_vane`) is purely a visual
+indicator. The **brass** vane (`brass_wind_vane`) also emits an 8-way
+weak redstone signal from its upwind face(s), scaled by local wind
+strength. Both work on Sable ships too. Every GeckoLib fact below was verified against the real
+`geckolib-neoforge-1.21.1-4.9.2` bytecode, and every Sable fact against
+the pinned Sable 2.0.5 jar.
+
+### Rendering (GeckoLib — a required dependency)
+
+- `WindVaneBlock.getRenderShape` → `ENTITYBLOCK_ANIMATED`, so the chunk
+  mesh draws nothing and `WindVaneRenderer` (a `GeoBlockRenderer`) draws
+  the whole model. `WindVaneGeoModel` is a `DefaultedBlockGeoModel`, whose
+  path convention (`geo/%s/%s.geo.json`, `textures/%s/%s.png`, subtype
+  `block`) resolves its id, `wind_vane`, to `geo/block/wind_vane.geo.json`
+  (textures are per block — see the next bullet). The geometry and the
+  block entity type keep the plain `wind_vane` id because both vanes
+  share them; only the zinc *block* is `zinc_wind_vane`.
+- **One geo, a texture per block.** Both vanes share the block entity
+  type, so a single renderer and model serve them. `WindVaneGeoModel`
+  overrides the one-argument `getTextureResource(animatable)` to return
+  `buildFormattedTexturePath(<block id>)` — `textures/block/zinc_wind_vane.png`
+  or `textures/block/brass_wind_vane.png`. That's the right hook: every
+  GeckoLib renderer's `getTextureLocation` calls the model's two-argument
+  `getTextureResource(animatable, renderer)`, which delegates to it, and
+  `DefaultedGeoModel` overrides only it. The item does the same through
+  `withAltTexture(<block id>)`, which routes through that same
+  `buildFormattedTexturePath`, so a block and its item can't disagree. A
+  further variant needs only a texture named after its block id, plus the
+  usual block/item/loot/lang entries.
+- `models/item/brass_wind_vane.json` is just a `parent` of
+  `aeroweather:item/zinc_wind_vane`. Vanilla decides `builtin/entity` from the
+  root of the parent chain (`BlockModel.getRootModel()`), and display
+  transforms and `gui_light` fall back to the parent per context — so
+  both items share one set of hand and GUI transforms.
+- **No animation file.** `GeoModel.getAnimationResource` is only reached
+  through animation-controller lookups, and the vane registers no
+  controllers. The `vane` bone is turned procedurally in
+  `setCustomAnimations` via `getBone("vane")` → `GeoBone.setRotY`. That's
+  in **radians** (GeckoLib's bone transform uses `Axis.YP.rotation`), and
+  **negated**, because +Y turns counter-clockwise seen from above while
+  compass bearings run clockwise.
+- **Orientation needs no correction.** The block has no facing property, so
+  `GeoBlockRenderer.getFacing` falls back to NORTH, and `rotateBlock(NORTH)`
+  is a 0° turn (its switch map is SOUTH 180, WEST 90, NORTH 0, EAST 270).
+  The model's origin is the block's bottom-centre (`translate(0.5, 0, 0.5)`).
+  So the model renders exactly as authored: an arrowhead modeled pointing
+  north (−Z) is heading 0. `MODEL_ARROW_BEARING_DEG` exists only for a
+  future model authored another way. The shipped model was confirmed
+  north-pointing from the `.bbmodel` itself: the fin's *east* face carries
+  the arrow's texture region, and on an east face u runs south → north.
+- Default render type is `entityCutoutNoCull`: cutout alpha, both sides of
+  every face drawn, so a single zero-width plane works as a fin.
+- `getRenderBoundingBox` is widened to ±1 block, since the default is the
+  unit cube.
+- The item is `WindVaneBlockItem implements GeoItem`, whose
+  `createGeoRenderer` supplies a `WindVaneItemRenderer` (a
+  `GeoItemRenderer`) over the same geo. No
+  NeoForge client-extension registration is needed: GeckoLib's own
+  `BlockEntityWithoutLevelRendererMixin` routes `builtin/entity` items.
+  It's dedicated-server safe because GeckoLib only calls
+  `createGeoRenderer` from a lazy provider gated on
+  `GeckoLibServices.PLATFORM.isPhysicalClient()`.
+- **The item's vane points into the wind** wherever it's drawn in the
+  world. `WindVaneItemRenderer.renderRecursively` sets the `vane` bone's
+  Y rotation just before GeckoLib draws it — on entry the pose stack is
+  still the parent frame, since the default implementation pushes and
+  then calls `RenderUtil.prepMatrixForBone` (turning about `Axis.YP`).
+  It reads the model's X/Z axes off `poseStack.last().pose()` and solves
+  `t = atan2(-X·w, -Z·w)` (w = the wind's FROM vector): a turn of `t`
+  carries the model's −Z arrow to `-sin(t)·X - cos(t)·Z`, which lines up
+  best with `w`. That's right at any tilt, so no special cases for each
+  hand's display angle, left-hand mirroring, arm swing or head pitch; on
+  a level model it reduces to the placed vane's `-bearing`. World and
+  entity passes keep the camera rotation out of the pose stack (it
+  travels in the frustum matrix handed to `LevelRenderer.renderLevel`),
+  so those axes are already world space. **So is the first-person hand,
+  despite appearances:** `GameRenderer.renderItemInHand` starts its fresh
+  `PoseStack` with the *inverse* of that view rotation and puts the view
+  rotation itself on the model-view stack, so the two cancel on screen
+  but the pose stack stays world-aligned. (Its parameter is misleadingly
+  named `projectionMatrix`; the caller passes the view rotation.) An
+  earlier version also applied `Camera.rotation()` for `FIRST_PERSON_*`
+  contexts, which rotated the held vane twice by the player's facing —
+  it looked ~90° off. No context needs special-casing; `GUI`/`NONE` rest
+  at 0.
+- **Why the bone must be set on every draw, GUI included:** GeckoLib bakes
+  each geo file once (`GeckoLibCache`), so the item and every placed vane
+  share the same `GeoBone` objects. A renderer that leaves the bone alone
+  draws whatever angle the last placed vane set — which is what made the
+  held item and inventory icon point in arbitrary directions.
+- Each blockstate points at a **particle-only** model (just
+  `textures.particle`, set to that vane's own texture), used for break
+  and landing particles. The single `""` variant matches every state:
+  the zinc vane's only one, and every `POWER`/`WIND_FROM` combination of
+  the brass vane's.
+- Model workflow: Blockbench's "GeckoLib Models & Animations" plugin, a
+  GeckoLib Animated Model of type Block/Item, exported over `geo/block/wind_vane.geo.json` and
+  `textures/block/zinc_wind_vane.png` (the brass texture is a separate file). The `.bbmodel` lives in `img/`, and `build.gradle`'s
+  `**/*.bbmodel` exclude keeps it out of the jar.
+
+### Redstone (brass only)
+
+Only `BrassWindVaneBlock` emits. It's a subclass rather than a flag on
+`WindVaneBlock` because `Block`'s constructor builds the state definition
+(`createBlockStateDefinition`) before any subclass field is assigned, so
+a flag couldn't choose which properties exist. The zinc vane has no
+properties, isn't a signal source, and runs no server ticker.
+
+The signal mirrors vanilla's daylight detector: weak power only (no
+`getDirectSignal`), the value held in the blockstate, a server ticker
+re-evaluating every 20 ticks, and `setBlock(UPDATE_ALL)` only on change —
+so observers pulse whenever the reading changes.
+
+- `power = clamp(round(adjustedStrength / windVaneFullSignalStrength * 15), 0, 15)`.
+  The config default is 50, matching `windmillFullSpeedStrength`, so the
+  wind that runs a windmill at full speed also maxes a vane.
+- `WIND_FROM = WindDirection.nearest(bearing)` (±22.5° sectors). A face
+  emits iff `angularDifference(windFrom, faceBearing) <= 45`, which is one
+  face for a cardinal wind and two for a diagonal. `WIND_FROM` is held while
+  power is 0, so a calm vane doesn't churn state or pulse observers.
+- **Direction convention (easy to get backwards):** in
+  `getSignal(state, level, pos, direction)`, `direction` points from the
+  querying neighbour *toward* this block — `SignalGetter.hasNeighborSignal`
+  asks its north neighbour with `Direction.NORTH`. So the emitting face is
+  `direction.getOpposite()`.
+- `rotate`/`mirror` turn `WIND_FROM` with the block.
+- Collision is the model's 3px base slab; the outline covers the whole
+  cell, so aiming at the vane itself picks the block.
+
+### Heading animation
+
+A client-only block entity ticker eases a transient (non-NBT) heading
+toward `LocalWind`'s bearing:
+`heading += wrapDegrees(target − heading) × 0.15 × clamp(strength / windVaneFullSignalStrength, 0, 1)`.
+In calm air the vane holds still; in strong wind it tracks quickly. The
+first reading snaps rather than eases, so a vane doesn't sweep round every
+time its chunk loads. Rendering interpolates with
+`Mth.rotLerp(partialTick, previous, current)`.
+
+### On Sable ships (true wind)
+
+All ship handling lives in `wind/LocalWind`, which both the vane and
+Create windmills use:
+
+- `SubLevelFrames.get().frameAt(level, pos)` finds a block's ship, if any.
+  `SableSubLevelFrames` implements it as `SubLevelContainer.getContainer(level)`
+  → `inBounds(pos)` → `getPlot(ChunkPos)` → `getSubLevel()` →
+  `logicalPose()`, null-checked at each step. `getContainer` is null for
+  levels Sable doesn't manage, and `inBounds` is a plain range check that
+  rejects every ordinary world block before any lookup. It uses only Sable's
+  common API, so the same code serves both sides.
+- **World block:** exactly the pre-M10 windmill computation (height scaling
+  at `pos.getY()`, raw bearing), so world windmills are bit-identical to 1.1.0.
+- **Ship block:** blocks on a ship live in real level chunks at far-away
+  plot coordinates, so strength is height-scaled at the block's *world* Y
+  (`pose.transformPosition(Vec3.atCenterOf(pos))`). The FROM vector is
+  rotated into the ship's frame (`transformNormalInverse`) and turned back
+  into a bearing with `WindDirection.bearingOf`. Strength is scaled by the
+  wind's share in the ship's horizontal plane — full on a level ship,
+  fading to 0 as it pitches on end.
+- **Ship rendering and culling need nothing from us.** Sable's
+  `sublevel_render.block_entity_render.LevelRendererMixin` wraps every
+  block entity renderer in `ClientSubLevel.renderPose()`, and
+  `block_entity_visible.LevelRendererMixin` culls by transforming *our*
+  `getRenderBoundingBox` by the ship's pose.
+- **True wind, deliberately:** the ship's own motion is ignored, matching
+  the contraption force and windmills. If apparent wind is ever wanted,
+  `ServerSubLevel.latestLinearVelocity`/`latestAngularVelocity` are set in
+  `SubLevelPhysicsSystem.updatePose` as a per-tick value ×20, i.e. blocks
+  per second.
+- Windmills: `ClientActiveWindmills` keys each sighting by the bearing's
+  own `BlockPos` (a stable identity) but locates it at
+  `SubLevelFrames.worldPositionOf(...)`, so a ship-mounted windmill counts
+  for the particle gate where it actually is.
+
+**Recipes** (`data/aeroweather/recipe/`): shaped `zzz` / ` z ` / `ccc` —
+zinc nuggets over andesite casing for the zinc vane, brass nuggets over
+brass casing for the brass one (the brass recipe files under the
+redstone recipe-book tab, zinc under misc). Every ingredient is a Create
+item, so each recipe carries `"neoforge:conditions": [{"type":
+"neoforge:mod_loaded", "modid": "create"}]` (key and codec field verified
+against NeoForge 21.1.248's `ConditionalOps`/`ModLoadedCondition`).
+Without Create they're skipped cleanly — no recipe parse error in the
+log — and the vanes are creative-only. There are no recipe-book unlock
+advancements, so the recipe book lists them only once crafted (JEI/EMI
+show them regardless).
+
+**Still the user's call:** the material (copper sounds, pickaxe,
+strength 3 as a placeholder for both; map colour orange for zinc, gold
+for brass).
+
 ## Command reference
 
 ```
@@ -494,18 +717,25 @@ AeroWeather must load and fully function (wind state, particles,
 commands, weather coupling) with **zero** crash risk when Create, Create
 Aeronautics, and Sable are absent — they're optional dependencies.
 
-- **Isolation rule**: `AeronauticsWindForceApplier` is the *only* class in
-  the mod allowed to reference Create/Aeronautics/Sable/Sable-Companion
-  types. `AeronauticsIntegration.get()` checks `ModCompat.isLoaded(...)`
-  *before* that class is ever classloaded — never let the JVM attempt to
-  resolve an external class reference without a `ModList` check first.
-  Event registration inside that class is deliberately manual/instance-
-  based (`NeoForge.EVENT_BUS.addListener(...)` / `modEventBus.addListener(...)`),
-  **not** this codebase's usual `@EventBusSubscriber` + static
-  `@SubscribeEvent` pattern — that pattern gets scanned/registered by
-  NeoForge at mod-init regardless of intent, which would force-classload
-  Sable's event types even when Sable isn't installed. Do not "clean
-  this up" to the usual annotation pattern.
+- **Isolation rule**: only two classes in the mod may reference Sable or
+  Sable-Companion types — `AeronauticsWindForceApplier` (M7) and
+  `SableSubLevelFrames` (M10). Each is only ever constructed by a
+  Sable-free holder that checks `ModCompat.isLoaded("sable")` first
+  (`AeronauticsIntegration.get()` and `SubLevelFrames.Resolved`
+  respectively), so the JVM never attempts to resolve a Sable class
+  reference without a `ModList` check first. Both holders deliberately
+  return an *interface* type (`WindForceApplier` / `SubLevelFrames`): the
+  bytecode verifier doesn't load a class just to check it's assignable to
+  an interface, so the Sable-typed implementation stays unloaded until
+  it's actually constructed. Don't narrow those return types to the
+  concrete class.
+  Event registration inside `AeronauticsWindForceApplier` is deliberately
+  manual/instance-based (`NeoForge.EVENT_BUS.addListener(...)` /
+  `modEventBus.addListener(...)`), **not** this codebase's usual
+  `@EventBusSubscriber` + static `@SubscribeEvent` pattern — that pattern
+  gets scanned/registered by NeoForge at mod-init regardless of intent,
+  which would force-classload Sable's event types even when Sable isn't
+  installed. Do not "clean this up" to the usual annotation pattern.
 - **Second sanctioned exception (M9)**: `mixin/WindmillBearingBlockEntityMixin`
   targets a Create class. It doesn't break the rule above because it
   names Create purely by *string* target/descriptor and never by type,
@@ -537,6 +767,11 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   failure during force application just skips that one sub-level for
   the tick (a single malformed contraption shouldn't take the whole
   feature down).
+- **GeckoLib is the exception to all of the above (M10).** It's a
+  *required* dependency (`type="required"` in `neoforge.mods.toml`,
+  `implementation` in `build.gradle`), so the wind vane's classes
+  reference it directly with no gate. Keep GeckoLib usage confined to
+  the vane's `block/` and `client/render/` classes anyway.
 
 ## Out of scope (for now)
 
@@ -544,34 +779,41 @@ Not building yet, don't add speculative abstractions for these — YAGNI,
 but don't actively make future extension harder either:
 
 - New weather pattern types (tornadoes, custom storms, etc.)
-- New blocks/items (wind vanes, anemometers, etc.)
+- New blocks/items beyond the two wind vanes (anemometers, handheld wind
+  meters, etc.)
 - Anything beyond wind simulation + its Create/Create Aeronautics
   interaction (windmill response and contraption force are in scope;
   other Create kinetic generators are not)
 
 ## Roadmap / milestones
 
-M0–M8 are complete — repo scaffolding, wind simulation core, networking
+M0–M9 are complete — repo scaffolding, wind simulation core, networking
 sync, the `/aeroweather` command, particles, config, the Create
 Aeronautics/Sable research spike (M6), the force-application
-implementation (M7, see "M7: Aeronautics wind force" above), and live
+implementation (M7, see "M7: Aeronautics wind force" above), live
 integration testing against a real assembled airship (M8, which found
 and fixed two real bugs: the `onSubLevelAdded` lift-ratio timing issue
 and the contraption-diagram disconnect from an unregistered
-`ForceGroup` — both documented above/in "External references"). See
-`git log` for detailed history of each milestone.
+`ForceGroup` — both documented above/in "External references"), and the
+Create windmill wind response (M9, confirmed working in a live client
+after one fix: the mixin had shadowed an inherited field — see the M9
+section's `@Shadow` note). A **without-Create** launch (the mixin
+config-plugin gate) still hasn't been explicitly tested. See `git log`
+for detailed history of each milestone.
 
-**M9 (Create windmill wind response, see the section above) is written
-and compile-verified, but NOT yet live-tested.** Unlike every earlier
-milestone, compiling proves less here: a mixin's injection points are
-only resolved at class-transform time. What *has* been verified
-statically, against Create 6.0.10's actual bytecode: `getGeneratedSpeed()`
-really does `invokevirtual getAngleSpeedDirection:()F`, and
-`tick()`/`updateGeneratedRotation()`/`running` all exist with the
-descriptors the mixin shadows. Still unverified until someone runs it:
-that Mixin applies cleanly in a dev client, that windmill speed/direction
-behave as intended in-game, and that a **without-Create** launch still
-boots (the config-plugin gate).
+**M10 (the wind vane, see the section above — including Sable ship
+support, and the shared `LocalWind` that also made windmills ship-aware)
+has been reported working in a live client. The later zinc/brass split
+(redstone moved to the brass vane, per-block textures) is compile-verified
+only.** Verified
+statically: every GeckoLib and Sable API used, against the real jars; the
+built jar ships the geo model, texture, blockstate, block and item
+models, loot table and pickaxe tag, and no `.bbmodel`; the generated
+`mods.toml` declares GeckoLib required. Not specifically confirmed yet: the item's vane
+pointing into the wind in first person (third person is confirmed), in item
+frames and on the ground, the vane's heading in-game (world and on a ship), redstone
+faces on a turned ship, the item's hand and inventory transforms, and
+windmills on ships.
 
 ## External references
 

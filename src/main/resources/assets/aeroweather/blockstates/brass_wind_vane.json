@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "aeroweather:block/brass_wind_vane"
+    }
+  }
+}

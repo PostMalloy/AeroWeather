@@ -6,7 +6,10 @@ import com.mojang.logging.LogUtils;
 
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.integration.aeronautics.AeronauticsIntegration;
+import com.postmalloy.aeroweather.registry.AeroWeatherBlockEntityTypes;
+import com.postmalloy.aeroweather.registry.AeroWeatherBlocks;
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
+import com.postmalloy.aeroweather.registry.AeroWeatherItems;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 
 import net.neoforged.bus.api.IEventBus;
@@ -33,6 +36,11 @@ public class AeroWeather {
 
         // Register wind particle types
         AeroWeatherParticles.PARTICLE_TYPES.register(modEventBus);
+
+        // Register the wind vane block, its item and its block entity type
+        AeroWeatherBlocks.BLOCKS.register(modEventBus);
+        AeroWeatherItems.ITEMS.register(modEventBus);
+        AeroWeatherBlockEntityTypes.BLOCK_ENTITY_TYPES.register(modEventBus);
 
         // Start the Aeronautics wind force integration (a no-op unless Sable is installed)
         AeronauticsIntegration.get().start(modEventBus);

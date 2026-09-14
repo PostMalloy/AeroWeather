@@ -95,6 +95,15 @@ config="${mod_id}.mixins.json"
     ordering="NONE"
     side="BOTH"
 
+# GeckoLib renders the wind vane block's animated model (M10). Required, unlike Sable/Create
+# below: the block can't render without it. 4.9.2 is the version AeroWeather compiles against.
+[[dependencies.${mod_id}]]
+    modId="geckolib"
+    type="required"
+    versionRange="[4.9.2,)"
+    ordering="NONE"
+    side="BOTH"
+
 # Optional soft dependencies for M7's Aeronautics wind force integration (see CLAUDE.md).
 # Sable is the actual technical dependency (AeronauticsWindForceApplier's API surface);
 # Create is Sable's own optional dependency and is declared here too since it's present

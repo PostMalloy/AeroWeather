@@ -45,6 +45,11 @@
   "aeroweather.configuration.windmillMinDirectionalScale": "Scale When Facing Away",
   "aeroweather.configuration.windmillReverseWhenBehind": "Reverse on Wind From Behind",
 
+  "aeroweather.configuration.windVane": "Wind Vane Settings",
+  "aeroweather.configuration.windVaneFullSignalStrength": "Strength for Full Signal",
+  "block.aeroweather.zinc_wind_vane": "Zinc Wind Vane",
+  "block.aeroweather.brass_wind_vane": "Brass Wind Vane",
+
   "aeroweather.configuration.particles": "Particle Settings",
   "aeroweather.configuration.enabled": "enabled",
   "aeroweather.configuration.minRadius": "Spawn Radius (min)",

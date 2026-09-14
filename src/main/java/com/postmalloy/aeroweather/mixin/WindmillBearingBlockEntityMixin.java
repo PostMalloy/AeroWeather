@@ -8,10 +8,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.postmalloy.aeroweather.client.ClientActiveWindmills;
+import com.postmalloy.aeroweather.integration.aeronautics.SubLevelFrames;
 import com.postmalloy.aeroweather.integration.create.CreateWindmillWind;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -111,9 +113,12 @@ public abstract class WindmillBearingBlockEntityMixin {
         if (level.isClientSide) {
             // Feeds the particle spawner's "only near wind-affected objects" option. Sable
             // contraptions have to be broadcast from the server for this; windmills tick
-            // client-side already, so they can just report themselves.
+            // client-side already, so they can just report themselves. Reported at its world
+            // position: on a Sable ship the bearing's own BlockPos is a far-away plot coordinate.
             if (generatedSpeed != 0.0f) {
-                ClientActiveWindmills.report(level.dimension().location(), self.getBlockPos(), level.getGameTime());
+                BlockPos pos = self.getBlockPos();
+                ClientActiveWindmills.report(level.dimension().location(), pos,
+                        SubLevelFrames.worldPositionOf(level, pos), level.getGameTime());
             }
             return;
         }

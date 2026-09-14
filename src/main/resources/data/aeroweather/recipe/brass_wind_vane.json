@@ -1,0 +1,27 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "create"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "b": {
+      "item": "create:brass_nugget"
+    },
+    "c": {
+      "item": "create:brass_casing"
+    }
+  },
+  "pattern": [
+    "bbb",
+    " b ",
+    "ccc"
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeroweather:brass_wind_vane"
+  }
+}
