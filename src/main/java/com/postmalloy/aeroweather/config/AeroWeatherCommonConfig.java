@@ -180,7 +180,7 @@ public final class AeroWeatherCommonConfig {
                 .defineInRange("windmillMinDirectionalScale", 0.0, 0.0, 1.0);
         WINDMILL_REVERSE_WHEN_BEHIND = builder
                 .comment("Whether wind arriving at the back of a windmill spins it in the opposite direction, instead of driving it forwards regardless of which face it hits.")
-                .define("windmillReverseWhenBehind", true);
+                .define("windmillReverseWhenBehind", false);
         builder.pop();
 
         builder.comment(

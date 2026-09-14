@@ -47,7 +47,7 @@ public final class AeroWeatherClientConfig {
                 .defineInRange("heightJitter", 3.0, 0.0, 32.0);
         MAX_PARTICLES_PER_TICK = builder
                 .comment("Particles spawned per client tick at strength 100 (scales linearly down to 0 at strength 0).")
-                .defineInRange("maxParticlesPerTick", 1.0, 0.0, 20.0);
+                .defineInRange("maxParticlesPerTick", 0.5, 0.0, 20.0);
         MIN_SPEED = builder
                 .comment("Particle drift speed, in blocks/tick, at strength just above 0.")
                 .defineInRange("minSpeed", 0.05, 0.0, 5.0);
@@ -56,7 +56,7 @@ public final class AeroWeatherClientConfig {
                 .defineInRange("maxSpeed", 0.4, 0.0, 5.0);
         DIRECTION_JITTER_DEG = builder
                 .comment("Random per-particle deviation from the wind's exact direction, in degrees.")
-                .defineInRange("directionJitterDegrees", 5.0, 0.0, 180.0);
+                .defineInRange("directionJitterDegrees", 15.0, 0.0, 180.0);
         OUTDOORS_ONLY = builder
                 .comment("Whether particles only spawn where they can see the sky (skips spawns inside/under terrain and buildings).")
                 .define("outdoorsOnly", true);

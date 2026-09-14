@@ -197,7 +197,8 @@ downwind. Two things layer on top:
 
 Particles spawn at a random angle around the player (they drift toward
 the travel direction regardless of spawn angle, so this only affects
-ambience); a per-particle ±5° direction jitter avoids uniform drift.
+ambience); a per-particle ±15° direction jitter (`directionJitterDegrees`) avoids
+uniform drift.
 Both spawn rate and drift speed scale with wind strength; vertical
 speed is clamped to 0.
 
@@ -436,6 +437,9 @@ that `MechanicalBearingBlockEntity.onSpeedChanged` sets. Sign flips call
 default `minDirectionalScale = 0` the windmill always passes *through*
 zero before reversing, so reversal is naturally smooth. That only stops
 being true if the floor is raised above 0.
+Reversal itself is opt-in: `windmillReverseWhenBehind` defaults to `false`,
+so by default wind from behind drives a windmill forwards, the same as
+wind from the front.
 
 ### The mixin (the codebase's only one)
 
