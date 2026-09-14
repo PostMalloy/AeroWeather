@@ -9,7 +9,7 @@ Aeroweather is a minecraft mod that provides a lightweight and configurable wind
 
 Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
 
-Create windmills can now be affected by local wind speed, both in speed (and therefore stress) and in direction (configurable). Now it's actually advantageous to build your windmills on higher ground.
+Create windmills can now be affected by local wind speed, both in speed (and therefore stress) and in direction (configurable, default off). Now it's actually advantageous to build your windmills on higher ground.
 
 
 Perhaps most importantly, wind will impart force on Create Aeronautics contraptions. The force of the wind is calculated via the cross-sectional area of the contraption that faces the wind, and scaled by the proportion of balloon, levitite, or wing-like blocks on your contraption to the proportion of non-lifting blocks. This means that contraptions without any of these blocks (such as cars, mining machines, etc) are unaffected by the wind, while contraptions like hot air balloons are most affected by it. 
