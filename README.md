@@ -3,7 +3,11 @@
 </p>
 
 ## Description
-Aeroweather is a minecraft mod that provides a lightweight and configurable wind system to minecraft. Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
+Aeroweather is a minecraft mod that provides a lightweight and configurable wind system to minecraft. 
+
+## Features
+
+Wind varies in intensity and direction in a semi-random pattern, and wind speed varies with y-level. Particles meander around the player to indicate the wind direction. Rain and thunderstorms can produce higher winds (though not always) and yield more erratic conditions. Simple wind gusts are also modeled. 
 
 Create windmills can now be affected by local wind speed, both in speed (and therefore stress) and in direction (configurable). Now it's actually advantageous to build your windmills on higher ground.
 
@@ -12,6 +16,12 @@ Perhaps most importantly, wind will impart force on Create Aeronautics contrapti
 
 <p align="center">
   <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex1.gif" width="100%" />
+</p>
+
+The mod now includes a few utility blocks that can help your aeronautics creations to perform well with the new wind feature. Wind vanes (zinc and brass variants) point in the direction of the wind, and the brass vane outputs a redstone signal with variable strength in the direction(s) of the wind. The stronger the wind, the stronger the signal. Both blocks also work when held!
+
+<p align="center">
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/ex2.gif" width="100%" />
 </p>
 
 ## Commands
