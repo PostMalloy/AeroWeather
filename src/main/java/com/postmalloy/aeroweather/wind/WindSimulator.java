@@ -33,8 +33,15 @@ public final class WindSimulator {
         }
 
         WindSavedData savedData = WindSavedData.get(serverLevel);
+        // A breeze that has run its course hands back to natural wind - and clients hear about it
+        // straight away, rather than whenever the change next crosses a sync threshold.
+        boolean breezeEnded = savedData.wind().expireTimedOverride(serverLevel.getGameTime());
         savedData.wind().tick(serverLevel.getRandom(), serverLevel.isRaining(), serverLevel.isThundering());
         savedData.setDirty();
-        WindSync.maybeSync(serverLevel, savedData);
+        if (breezeEnded) {
+            WindSync.forceSync(serverLevel, savedData);
+        } else {
+            WindSync.maybeSync(serverLevel, savedData);
+        }
     }
 }

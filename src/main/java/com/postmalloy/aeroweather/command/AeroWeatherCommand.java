@@ -80,7 +80,7 @@ public final class AeroWeatherCommand {
         WindState wind = WindSavedData.get(level).wind();
 
         WindDirection nearest = WindDirection.nearest(wind.directionDeg());
-        String sourceKey = wind.isOverridden() ? "commands.aeroweather.wind.info.overridden" : "commands.aeroweather.wind.info.natural";
+        Component source = sourceLabel(wind, level.getGameTime());
         int strengthRounded = Math.round(wind.strength());
 
         // getPosition() works for any command source (player, console, command block), not just players,
@@ -93,8 +93,17 @@ public final class AeroWeatherCommand {
         int adjustedStrengthRounded = Math.round(adjustedStrength);
 
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.info",
-                nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, Component.translatable(sourceKey),
+                nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, source,
                 adjustedStrengthRounded), false);
         return strengthRounded;
+    }
+
+    /** Where the current wind comes from: natural simulation, an operator's pin, or a breeze (with its time left). */
+    private static Component sourceLabel(WindState wind, long gameTime) {
+        if (wind.isTimedOverride()) {
+            long secondsLeft = (wind.timedOverrideTicksRemaining(gameTime) + 19L) / 20L;
+            return Component.translatable("commands.aeroweather.wind.info.breeze", secondsLeft);
+        }
+        return Component.translatable(wind.isOverridden() ? "commands.aeroweather.wind.info.overridden" : "commands.aeroweather.wind.info.natural");
     }
 }

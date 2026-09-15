@@ -60,9 +60,13 @@ block/
   WindVaneBlockEntity.java            GeoBlockEntity shared by both vanes; client-only transient heading, eased toward LocalWind
   WindVaneBlockItem.java              BlockItem + GeoItem for both vanes; same geo, texture named after its block
 
+item/
+  BreezeMakerItem.java                SwordItem on a 60-use copy of Tiers.IRON; right-clicking the air starts a
+                                       timed wind override (a breeze) blowing the way the player faces (see M11)
+
 config/
   AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds,
-                                       aeronautics force, windmill and wind vane tuning
+                                       aeronautics force, windmill, wind vane and breeze maker tuning
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption gating
 
 wind/
@@ -71,10 +75,10 @@ wind/
   LocalWind.java                      wind as seen from one block's own grid, both sides, Sable-ship aware; shared
                                        by the wind vane and Create windmills (see M10)
   WindmillWindResponse.java           pure function: (facing, wind, strength) -> quantized Create windmill speed multiplier
-  WindState.java                      direction/strength + drift target + gust + weather-boost + override; NBT I/O
+  WindState.java                      direction/strength + drift target + gust + weather-boost + override (timed or not); NBT I/O
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
-  WindOverride.java                   operator-set override value type
+  WindOverride.java                   pinned direction/strength value type (operator command, or breeze maker)
   WindHeightScaling.java              pure function: base strength -> elevation-scaled strength (power-law, 0 at/below sea level)
 
 network/
@@ -242,6 +246,11 @@ speed is clamped to 0.
   the tier cap. Overridden strength ignores the cap entirely.
 - Command override pins an absolute direction/strength and **freezes**
   natural drift while active; `reset` resumes drift from wherever it was.
+- The breeze maker applies a **timed** override (`WindState.applyTimedOverride`),
+  its expiry held as game time (`OverrideExpiresAt` in NBT; absent in older
+  saves, which means indefinite). `WindSimulator` lapses it on the 1Hz step
+  and force-syncs. An operator's indefinite override outranks it: the item
+  refuses while one is active, `set` replaces a breeze, `reset` clears it.
 - Simulation runs at ~1 Hz (every 20 ticks, gated inside `LevelTickEvent.Post`
   — NeoForge has no built-in tick-filtered event), not every tick.
 - Server→client sync (`CustomPacketPayload` via `RegisterPayloadHandlersEvent`):
@@ -705,12 +714,59 @@ show them regardless).
 strength 3 as a placeholder for both; map colour orange for zinc, gold
 for brass).
 
+## M11: Breeze maker
+
+`item/BreezeMakerItem`: an iron sword in every respect but durability, that
+also summons a breeze.
+
+- **Iron sword, 60 uses.** `TieredItem`'s constructor calls
+  `properties.durability(tier.getUses())`, overwriting any durability set on
+  the properties, so the item has its own tier: NeoForge's `SimpleTier`
+  copying `Tiers.IRON` (incorrect-blocks tag, speed, damage bonus,
+  enchantability, iron-ingot repair) with 60 uses, plus vanilla's iron-sword
+  attribute modifiers (`createAttributes(tier, 3, -2.4F)`). It's in
+  `#minecraft:swords`, which feeds the `enchantable/sword`, `sharp_weapon`,
+  `fire_aspect` and `durability` tags, so it enchants like a sword.
+- **Right-click into the air** (`use`, gated on `getPlayerPOVHitResult` being a
+  MISS, because a click on a block that doesn't use it also reaches `use`):
+  spends 1 durability, sets a 20-tick cooldown (a held right-click otherwise
+  re-fires every 4 ticks), plays the sound subtitled `Breeze whirs` (`SoundEvents.BREEZE_IDLE_GROUND`; not
+  `BREEZE_WHIRL`, which is the different `Breeze whirls`), and starts a
+  breeze.
+- **The breeze** is a timed override (see "Wind system design"). The wind
+  blows the way the player faces, so its FROM bearing is
+  `bearingOf(directionFromRotation(0, yRot).reverse())`. It runs at
+  `breezeMakerStrength` (default 50) for `breezeMakerDurationSeconds` (default
+  60), or until the next use replaces it. Refused, costing nothing, while an
+  operator's indefinite override is active. `/aeroweather wind info` reports it
+  as "breeze maker, Ns left".
+- **Particle burst**, sent from the server so everyone nearby sees it: 24
+  `WIND_STREAK` and 12 `WIND_GUST` in a ring round the player, each via
+  `sendParticles` with **count 0**. That spawns exactly one particle at the
+  given position with `(dx, dy, dz) * speed` as its velocity (verified in
+  `ClientPacketListener.handleParticleEvent`), and `WindStreakParticle` takes
+  its orientation and lifetime from that velocity. All blow the new way, ±15°.
+- **Push**: every `Mob` and every other player within `breezeMakerPushRadius`
+  (default 8) of the user gets
+  `LivingEntity.knockback(breezeMakerPushStrength, user - target)` (default
+  1.0; an ordinary melee hit is 0.4, from `LivingEntity.hurt`). `knockback`
+  pushes *against* the (x, z) it's given, so the vector toward the user blows
+  the target away. Knockback resistance and NeoForge's `LivingKnockBackEvent`
+  still apply. Armor stands are skipped, and so are spectators and creative
+  players in flight (vanilla explosions' exemptions). Pushed players also get
+  `hurtMarked = true`: a player's client owns their movement, and
+  `ServerEntity` only sends them a new velocity when that flag is set. There's
+  no line-of-sight check, so it reaches through walls.
+- Recipe `  W` / ` B ` / `B  `: a wind charge over two breeze rods (all
+  vanilla, so no condition needed), category `equipment`. Listed under Tools &
+  Utilities.
+
 ## Command reference
 
 ```
 /aeroweather wind <direction> <strength>   set wind (direction: cardinal keyword like "north"/"ne", or a degree float)
 /aeroweather wind reset                    resume natural simulation
-/aeroweather wind info                     report direction/strength (base and elevation-adjusted at the command source's position) and whether overridden/weather-boosted
+/aeroweather wind info                     report direction/strength (base and elevation-adjusted at the command source's position) and whether it's natural, an operator override, or a breeze (with its time left)
 ```
 
 Requires operator permission (level 2). `<strength>` is clamped 0–100.
@@ -783,7 +839,7 @@ Not building yet, don't add speculative abstractions for these — YAGNI,
 but don't actively make future extension harder either:
 
 - New weather pattern types (tornadoes, custom storms, etc.)
-- New blocks/items beyond the two wind vanes (anemometers, handheld wind
+- New blocks/items beyond the two wind vanes and the breeze maker (anemometers, handheld wind
   meters, etc.)
 - Anything beyond wind simulation + its Create/Create Aeronautics
   interaction (windmill response and contraption force are in scope;
@@ -818,6 +874,9 @@ pointing into the wind in first person (third person is confirmed), in item
 frames and on the ground, the vane's heading in-game (world and on a ship), redstone
 faces on a turned ship, the item's hand and inventory transforms, and
 windmills on ships.
+
+**M11 (the breeze maker, see its section) is written and compile-verified,
+but not yet live-tested.**
 
 ## External references
 

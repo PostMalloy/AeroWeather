@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "B": {
+      "item": "minecraft:breeze_rod"
+    },
+    "W": {
+      "item": "minecraft:wind_charge"
+    }
+  },
+  "pattern": [
+    "  W",
+    " B ",
+    "B  "
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeroweather:breeze_maker"
+  }
+}

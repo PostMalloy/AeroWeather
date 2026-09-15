@@ -52,6 +52,11 @@ public final class AeroWeatherCommonConfig {
 
     public static final ModConfigSpec.DoubleValue WIND_VANE_FULL_SIGNAL_STRENGTH;
 
+    public static final ModConfigSpec.IntValue BREEZE_MAKER_DURATION_SECONDS;
+    public static final ModConfigSpec.DoubleValue BREEZE_MAKER_STRENGTH;
+    public static final ModConfigSpec.DoubleValue BREEZE_MAKER_PUSH_RADIUS;
+    public static final ModConfigSpec.DoubleValue BREEZE_MAKER_PUSH_STRENGTH;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -191,6 +196,24 @@ public final class AeroWeatherCommonConfig {
         WIND_VANE_FULL_SIGNAL_STRENGTH = builder
                 .comment("Elevation-adjusted wind strength at which a brass wind vane outputs a full redstone signal of 15, scaling linearly down to 0 in calm air. Also the strength at which either vane swings toward the wind at full speed. Defaults to windmillFullSpeedStrength, so the wind that runs a windmill at full speed also maxes a vane.")
                 .defineInRange("windVaneFullSignalStrength", 50.0, 1.0, 300.0);
+        builder.pop();
+
+        builder.comment(
+                "The breeze maker: right-clicking the air sets the wind to blow the way the player faces,",
+                "for a while. Server-authoritative. An operator's /aeroweather override takes precedence."
+        ).push("breezeMaker");
+        BREEZE_MAKER_DURATION_SECONDS = builder
+                .comment("How long a breeze lasts, in seconds, before natural wind resumes. Using the breeze maker again starts a new breeze.")
+                .defineInRange("breezeMakerDurationSeconds", 60, 1, 3600);
+        BREEZE_MAKER_STRENGTH = builder
+                .comment("Wind strength (0-100, before elevation scaling) a breeze sets.")
+                .defineInRange("breezeMakerStrength", 50.0, 0.0, 100.0);
+        BREEZE_MAKER_PUSH_RADIUS = builder
+                .comment("Mobs and other players within this many blocks of the user are blown away from them when a breeze is summoned. 0 disables the push.")
+                .defineInRange("breezeMakerPushRadius", 8.0, 0.0, 32.0);
+        BREEZE_MAKER_PUSH_STRENGTH = builder
+                .comment("How hard they're pushed, on vanilla's knockback scale (an ordinary melee hit is 0.4). Knockback resistance still applies.")
+                .defineInRange("breezeMakerPushStrength", 1.0, 0.0, 5.0);
         builder.pop();
 
         SPEC = builder.build();

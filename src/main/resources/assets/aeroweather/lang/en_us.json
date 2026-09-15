@@ -50,6 +50,14 @@
   "block.aeroweather.zinc_wind_vane": "Zinc Wind Vane",
   "block.aeroweather.brass_wind_vane": "Brass Wind Vane",
 
+  "aeroweather.configuration.breezeMaker": "Breeze Maker Settings",
+  "aeroweather.configuration.breezeMakerDurationSeconds": "Breeze Duration (sec)",
+  "aeroweather.configuration.breezeMakerStrength": "Breeze Strength",
+  "aeroweather.configuration.breezeMakerPushRadius": "Push Radius",
+  "aeroweather.configuration.breezeMakerPushStrength": "Push Strength",
+  "item.aeroweather.breeze_maker": "Breeze Maker",
+  "item.aeroweather.breeze_maker.pinned": "The wind is pinned by an operator",
+
   "aeroweather.configuration.particles": "Particle Settings",
   "aeroweather.configuration.enabled": "enabled",
   "aeroweather.configuration.minRadius": "Spawn Radius (min)",
@@ -73,6 +81,7 @@
   "commands.aeroweather.wind.info": "Wind blowing from %s (%s°) at strength %s/100 (%s), %s/100 adjusted for your elevation",
   "commands.aeroweather.wind.info.overridden": "operator override",
   "commands.aeroweather.wind.info.natural": "natural",
+  "commands.aeroweather.wind.info.breeze": "breeze maker, %ss left",
 
   "argument.aeroweather.direction.invalid": "Unknown wind direction '%s' - use a cardinal (north, ne, east, ...) or a bearing in degrees",
 

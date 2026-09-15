@@ -8,8 +8,8 @@ import net.minecraft.util.RandomSource;
 /**
  * Wind for a single dimension: a direction (compass bearing wind blows
  * FROM) and strength (0-100), naturally drifting over time, gusting
- * occasionally, boosted by rain/thunderstorms, and overridable via the
- * /aeroweather command. See CLAUDE.md's "Wind system design" section for
+ * occasionally, boosted by rain/thunderstorms, and overridable - indefinitely
+ * via the /aeroweather command, or for a limited time via the breeze maker. See CLAUDE.md's "Wind system design" section for
  * the model this implements.
  * <p>
  * Natural (non-overridden) strength is additionally capped per weather
@@ -33,6 +33,8 @@ import net.minecraft.util.RandomSource;
 public final class WindState {
     private static final float MIN_STRENGTH = 0.0f;
     private static final float MAX_STRENGTH = 100.0f;
+    /** {@link #overrideExpiresAt} for an override that never lapses on its own. */
+    private static final long NO_EXPIRY = -1L;
 
     private float baseDirectionDeg;
     private float targetDirectionDeg;
@@ -50,6 +52,8 @@ public final class WindState {
     private boolean overridden;
     private float overrideDirectionDeg;
     private float overrideStrength;
+    /** Game time a timed override (the breeze maker's) lapses at, or {@link #NO_EXPIRY} for an operator's pin. */
+    private long overrideExpiresAt = NO_EXPIRY;
 
     // Recomputed every step; what the rest of the mod reads.
     private float directionDeg;
@@ -136,22 +140,57 @@ public final class WindState {
         return (float) AeroWeatherCommonConfig.STRENGTH_CAP_CLEAR.getAsDouble();
     }
 
-    /** Pins wind to an exact direction/strength and freezes natural drift until {@link #clearOverride()}. */
+    /**
+     * Pins wind to an exact direction/strength and freezes natural drift until
+     * {@link #clearOverride()}. Replaces any override already active, timed or not.
+     */
     public void applyOverride(WindOverride override) {
+        applyTimedOverride(override, NO_EXPIRY);
+    }
+
+    /**
+     * Like {@link #applyOverride(WindOverride)}, but lapsing by itself once game time
+     * reaches {@code expiresAt} (see {@link #expireTimedOverride}). The breeze maker's.
+     */
+    public void applyTimedOverride(WindOverride override, long expiresAt) {
         this.overridden = true;
         this.overrideDirectionDeg = override.directionDeg();
         this.overrideStrength = override.strength();
+        this.overrideExpiresAt = expiresAt;
         recomputeEffective();
     }
 
     /** Resumes natural simulation from wherever the drift/gust/weather state was left. */
     public void clearOverride() {
         this.overridden = false;
+        this.overrideExpiresAt = NO_EXPIRY;
         recomputeEffective();
+    }
+
+    /**
+     * Ends a timed override whose time is up, returning whether it did. An
+     * indefinite (operator) override is never touched.
+     */
+    public boolean expireTimedOverride(long gameTime) {
+        if (isTimedOverride() && gameTime >= overrideExpiresAt) {
+            clearOverride();
+            return true;
+        }
+        return false;
     }
 
     public boolean isOverridden() {
         return overridden;
+    }
+
+    /** True while an override that lapses by itself is active - a breeze, not an operator's pin. */
+    public boolean isTimedOverride() {
+        return overridden && overrideExpiresAt != NO_EXPIRY;
+    }
+
+    /** Ticks until the active timed override lapses, or 0 if there isn't one. */
+    public long timedOverrideTicksRemaining(long gameTime) {
+        return isTimedOverride() ? Math.max(0L, overrideExpiresAt - gameTime) : 0L;
     }
 
     /** The compass bearing wind is currently blowing FROM, in [0, 360). */
@@ -180,6 +219,7 @@ public final class WindState {
         tag.putBoolean("Overridden", overridden);
         tag.putFloat("OverrideDirection", overrideDirectionDeg);
         tag.putFloat("OverrideStrength", overrideStrength);
+        tag.putLong("OverrideExpiresAt", overrideExpiresAt);
         return tag;
     }
 
@@ -196,6 +236,8 @@ public final class WindState {
         state.overridden = tag.getBoolean("Overridden");
         state.overrideDirectionDeg = tag.getFloat("OverrideDirection");
         state.overrideStrength = tag.getFloat("OverrideStrength");
+        // Absent in worlds saved before the breeze maker existed, whose overrides were all indefinite.
+        state.overrideExpiresAt = tag.contains("OverrideExpiresAt") ? tag.getLong("OverrideExpiresAt") : NO_EXPIRY;
         state.recomputeEffective();
         return state;
     }

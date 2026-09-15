@@ -1,9 +1,11 @@
 package com.postmalloy.aeroweather.wind;
 
 /**
- * An operator-set wind override applied via the /aeroweather command.
- * While active, natural simulation is frozen and this pins the effective
- * wind exactly (see {@link WindState#applyOverride(WindOverride)}).
+ * A pinned wind direction and strength: set indefinitely by an operator's
+ * /aeroweather command, or for a limited time by the breeze maker. While
+ * active, natural simulation is frozen and this pins the effective wind
+ * exactly (see {@link WindState#applyOverride(WindOverride)} and
+ * {@link WindState#applyTimedOverride(WindOverride, long)}).
  */
 public record WindOverride(float directionDeg, float strength) {
     public WindOverride {
