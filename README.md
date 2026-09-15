@@ -48,7 +48,7 @@ The mod was designed to be as configurable as possible.
 
 * Biome influence - Wind should be stronger in a plains or badlands biome, compared to a forest or taiga. This influence will decay with y-level.
 
-* Handheld and placeable wind measurement devices that work on contraptions. The placeable block will emit a redstone signal in the direction of the wind.
+* More items and blocks to interact with the wind feature (handheld/placeable anemometer)
 
 * Integration with Particle Rain - wind will influence the angle of the rain particles and the frequency, speed and angle of falling leaves.
 
