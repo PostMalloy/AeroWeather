@@ -1,5 +1,6 @@
 package com.postmalloy.aeroweather.mixin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -10,7 +11,7 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import net.neoforged.fml.loading.LoadingModList;
 
 /**
- * Withholds Create-targeting mixins when Create isn't installed.
+ * Withholds each optional mod's mixins when that mod isn't installed.
  * <p>
  * {@code aeroweather.mixins.json} deliberately declares an <em>empty</em>
  * {@code mixins} array and lets {@link #getMixins()} supply the list instead:
@@ -30,6 +31,8 @@ import net.neoforged.fml.loading.LoadingModList;
 public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     private static final String CREATE_MODID = "create";
     private static final String WINDMILL_MIXIN = "WindmillBearingBlockEntityMixin";
+    private static final String PARTICLE_RAIN_MODID = "particlerain";
+    private static final String PARTICLE_RAIN_MIXIN = "ParticleRainWindMixin";
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -51,8 +54,18 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        boolean createPresent = LoadingModList.get().getModFileById(CREATE_MODID) != null;
-        return createPresent ? List.of(WINDMILL_MIXIN) : List.of();
+        List<String> mixins = new ArrayList<>(2);
+        if (isLoaded(CREATE_MODID)) {
+            mixins.add(WINDMILL_MIXIN);
+        }
+        if (isLoaded(PARTICLE_RAIN_MODID)) {
+            mixins.add(PARTICLE_RAIN_MIXIN);
+        }
+        return mixins;
+    }
+
+    private static boolean isLoaded(String modid) {
+        return LoadingModList.get().getModFileById(modid) != null;
     }
 
     @Override

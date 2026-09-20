@@ -140,12 +140,17 @@ integration/
   create/
     CreateWindmillWind.java           windmill speed multiplier from LocalWind (so ship-aware); zero Create types,
                                        always safe to classload (see M9)
+  particlerain/
+    ParticleRainWind.java             the wind vector handed to Particle Rain's weather particles; zero Particle
+                                       Rain types, always safe to classload (see M12)
 
 mixin/
-  AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds the windmill mixin unless
-                                       LoadingModList says "create" is installed
+  AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
+                                       LoadingModList says that mod is installed ("create", "particlerain")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
+  ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
+                                       Particle Rain only by string target/descriptor (see M12)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -761,6 +766,83 @@ also summons a breeze.
   vanilla, so no condition needed), category `equipment`. Listed under Tools &
   Utilities.
 
+## M12: Particle Rain wind
+
+Particle Rain replaces vanilla's weather with its own particle rain, snow and
+sandstorm, blown about by **its own** position/time noise wind. This makes
+AeroWeather's wind drive them instead. Client-only, like the mod itself.
+Everything here was verified against the real 1.21.1 NeoForge jar
+(`particlerain-4.0.0-beta.11`) and its matching source tag `v4-beta.11`, **not**
+the repo's HEAD - HEAD targets newer Minecraft versions and has since grown a
+`WindManager`/`WindLinkCompat` that exist in no 1.21.1 build.
+
+- **One hook drives everything.** `ParticleRain.getWind(double, double, double)`
+  is `public static` returning `org.joml.Vector3f`, and is the mod's only wind
+  source: called from `CustomParticle`'s constructor (a particle's initial
+  velocity) and from `CustomParticle.tickWind()` (the per-tick acceleration).
+  `ParticleRainWindMixin` injects at its HEAD and sets the return value, so
+  spawn and flight are both covered.
+- **v4 is data-driven**, so there are no per-weather particle classes to target:
+  rain, snow, dust and the rest are all `CustomParticle` instances configured by
+  `ParticleData` entries from `assets/particlerain/particles.json`, which packs
+  can override and extend. Hooking the shared wind source therefore also covers
+  pack-added particles for free. **There is no leaf particle in v4** - that was
+  a v3 feature - though a pack can add one, and it would be covered too.
+- **Zero compile dependency.** `getWind`'s descriptor is
+  `(DDD)Lorg/joml/Vector3f;` - JOML and primitives only - so the mixin names
+  Particle Rain purely by string, exactly like the Create windmill mixin.
+  `localRuntime` only, for dev-client testing.
+
+### Calibration (why the angle lands where it does)
+
+`tickWind` does `xd += wind.x * m; zd += wind.z * m`, where `m` is the
+particle's own `windStrength` (`stormWindStrength` while thundering). Particles
+use vanilla physics - `gravity = data.gravity`, default friction `0.98`,
+`hasPhysics = false` - and vanilla applies `yd -= 0.04 * gravity` then multiplies
+**all three axes** by friction, so at terminal velocity friction cancels and the
+settled slant is `atan(|W| * windStrength / (0.04 * gravity))`.
+
+`ParticleRainWind` therefore supplies
+`|W| = RAIN_REFERENCE * tan(angle) * (adjustedStrength / referenceStrength)`,
+where `RAIN_REFERENCE = 0.04 * 0.9 / 0.4` comes from the shipped rain preset
+(gravity 0.9, windStrength 0.4). Rain then sits at exactly
+`particleRainAngleDegrees` when local strength equals
+`particleRainReferenceStrength`.
+
+- The vector scales linearly with strength while the angle is its arctangent, so
+  stronger wind keeps steepening the slant yet only ever approaches horizontal.
+  That's why there's no maximum-angle setting and no clamp: elevation scaling can
+  drive local strength to 3x without producing a past-90 degree angle. Defaults
+  give 45 degrees at 100, ~63 at 200, ~27 at 50.
+- **Sandstorm floor.** Blowing sand that falls straight down in calm air isn't
+  a sandstorm, so the vector also carries a minimum magnitude, calibrated off
+  the shipped `dust` preset (`DUST_REFERENCE`) so dust never slants less than
+  `particleRainSandMinAngleDegrees` (default 45). It has to be a floor on the
+  shared wind vector rather than on one particle's angle, since `getWind` isn't
+  told which particle is asking - but dust responds ~15x more strongly to wind
+  than rain does (windStrength 0.7 against gravity 0.1, versus 0.4 against
+  0.9), so the floor that holds dust at 45 degrees leaves rain at only ~3.6 in
+  dead calm, snow ~1.6, heavy_dust ~12.9. Above the floor nothing changes: rain
+  still lands on exactly its configured angle at the reference strength.
+- Other types differ by their own tuning, which is the point of hooking the
+  shared wind rather than forcing per-particle motion: snow ~24 degrees,
+  sandstorm dust ~86, and fog/mist keep drifting. Thunderstorms slant further
+  still, since the mod swaps in `stormWindStrength` (rain 0.4 -> 0.8, so ~63
+  where clear weather gives 45).
+- Rain renders `rotationType: RELATIVE_VELOCITY`, i.e. the streak sprite aligns
+  to its velocity, so that velocity angle is literally what's on screen.
+- If a pack retunes rain's `gravity`/`windStrength`, the slant stays proportional
+  to wind but no longer lands exactly on the configured number.
+
+Strength is `WindHeightScaling.scale(...)` at the particle's own Y, matching
+`AmbientWindDrift`. While enabled we bypass Particle Rain's own
+`wind.strength`/`gustFrequency`/`yLevelAdjustment` options; `particleRainEnabled
+= false` hands those back. A calm AeroWeather wind returns a **zero** vector, not
+null - calm means rain falls straight down, not that the mod's noise resumes.
+`getWind` runs per particle per tick (thousands in heavy rain), so direction and
+base strength are cached per client tick; only the per-Y height scaling is
+recomputed per call.
+
 ## Command reference
 
 ```
@@ -804,6 +886,12 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   stronger than the `ModCompat` runtime check. Its helper,
   `integration/create/CreateWindmillWind`, contains no Create references
   at all and is always safe to classload.
+- **Third sanctioned exception (M12)**: `mixin/ParticleRainWindMixin` targets
+  a Particle Rain class on exactly the same terms - string target and
+  descriptor only, never a type, withheld by `AeroWeatherMixinPlugin` when
+  `particlerain` is absent. Its helper,
+  `integration/particlerain/ParticleRainWind`, contains no Particle Rain
+  references at all and is always safe to classload.
 - Build dependency pattern: Sable needs `compileOnly`+`localRuntime`
   (it's the actual API surface used — Sable's sub-level API is
   content-agnostic, so AeroWeather doesn't need Create/Create Aeronautics
@@ -877,6 +965,10 @@ windmills on ships.
 
 **M11 (the breeze maker, see its section) is written and compile-verified,
 but not yet live-tested.**
+
+**M12 (Particle Rain wind, see its section) is written and compile-verified,
+but not yet live-tested** - it needs Particle Rain installed in the dev client,
+which `localRuntime` now provides.
 
 ## External references
 
@@ -985,6 +1077,13 @@ but not yet live-tested.**
   physics. The shape M7's force model follows, adapted to the confirmed
   API (AABB-based exposed area via the box-silhouette formula, not
   per-face, since no finer geometry API exists).
+- Particle Rain: https://github.com/PigCart/particle-rain. Real modId
+  `particlerain`, MIT, Modrinth project `particle-rain` (id `nrikgvxm`).
+  **Client-only** (`server_side: unsupported`). Every 1.21.1 NeoForge build is
+  a v4 alpha/beta; pinned to `v4-beta.11` (`k32OBTlL`). Source tags match the
+  published builds (`v4-beta.11` = `dc44afa684`), which is the only reliable
+  way to read the right code - the repo is a Stonecutter multi-version tree
+  whose HEAD targets much newer Minecraft.
 - Modrinth Maven: `https://api.modrinth.com/maven` (wired via
   `exclusiveContent`/`includeGroup "maven.modrinth"`), coordinates
   `maven.modrinth:<slug>:<version id>`, pinned in `gradle.properties`.

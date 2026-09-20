@@ -26,6 +26,11 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue ACTIVE_CONTRAPTION_RADIUS;
     public static final ModConfigSpec.DoubleValue AMBIENT_WIND_PARTICLE_INTENSITY;
 
+    public static final ModConfigSpec.BooleanValue PARTICLE_RAIN_ENABLED;
+    public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_ANGLE_DEGREES;
+    public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_REFERENCE_STRENGTH;
+    public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -75,6 +80,24 @@ public final class AeroWeatherClientConfig {
         AMBIENT_WIND_PARTICLE_INTENSITY = builder
                 .comment("Target extra drift speed, in blocks/tick, eased into these particles at strength 100 (scales linearly down to 0 at strength 0). 0 disables the effect.")
                 .defineInRange("ambientWindParticleIntensity", 0.2, 0.0, 2.0);
+        builder.pop();
+
+        builder.comment(
+                "Wind influence on the Particle Rain mod's weather particles (rain, snow, sandstorm, mist).",
+                "Ignored when that mod isn't installed."
+        ).push("particleRain");
+        PARTICLE_RAIN_ENABLED = builder
+                .comment("Whether AeroWeather's wind drives Particle Rain's particles. When off, Particle Rain uses its own built-in wind instead.")
+                .define("particleRainEnabled", true);
+        PARTICLE_RAIN_ANGLE_DEGREES = builder
+                .comment("How far rain slants from vertical, in degrees, at the reference strength below. Not a maximum: stronger wind keeps steepening the slant, approaching (but never reaching) horizontal. Other particle types keep their own response relative to rain - snow is gentler, sandstorm dust blows nearly sideways.")
+                .defineInRange("particleRainAngleDegrees", 45.0, 0.0, 89.0);
+        PARTICLE_RAIN_REFERENCE_STRENGTH = builder
+                .comment("The elevation-adjusted wind strength (0-100 scale, before elevation scaling can push it higher) at which rain slants by exactly the angle above.")
+                .defineInRange("particleRainReferenceStrength", 100.0, 1.0, 300.0);
+        PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES = builder
+                .comment("Sandstorm dust never slants less than this many degrees from vertical, however calm the wind - blowing sand shouldn't fall straight down like rain. Because Particle Rain gives every type one shared wind, this floor tilts rain slightly too: about 4 degrees in dead calm at the default, which is far less than it sounds. 0 removes the floor.")
+                .defineInRange("particleRainSandMinAngleDegrees", 45.0, 0.0, 89.0);
         builder.pop();
 
         SPEC = builder.build();

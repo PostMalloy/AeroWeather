@@ -163,6 +163,13 @@ dependencies {
     // artifact via jarJar, so shipping our own copy would be a duplicate at runtime.
     compileOnly "io.github.llamalad7:mixinextras-neoforge:${mixinextras_version}"
 
+    // Particle Rain (M12): its weather particles are blown by our wind instead of the noise
+    // it generates for itself. localRuntime only - ParticleRainWindMixin names the mod purely
+    // by string target and descriptor (getWind is (DDD)Lorg/joml/Vector3f;, so JOML and
+    // primitives only), exactly like the Create windmill mixin, so no compile dependency is
+    // needed. Present here for dev-client testing.
+    localRuntime "maven.modrinth:particle-rain:${particle_rain_version}"
+
     // GeckoLib (M10): renders the wind vane block's animated model. A REQUIRED dependency,
     // unlike Sable/Create above - declared type="required" in neoforge.mods.toml, so no
     // ModCompat gate is needed around it. `implementation` so it's on the dev runtime too.

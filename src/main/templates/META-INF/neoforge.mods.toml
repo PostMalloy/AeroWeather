@@ -104,6 +104,16 @@ config="${mod_id}.mixins.json"
     ordering="NONE"
     side="BOTH"
 
+# Particle Rain (M12): our wind drives its rain/snow/sandstorm particles, via a mixin that
+# names it only by string. Client-only mod, so side="CLIENT" - a server never has it, and
+# AeroWeatherMixinPlugin withholds the mixin when it's absent.
+[[dependencies.${mod_id}]]
+    modId="particlerain"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="CLIENT"
+
 # Optional soft dependencies for M7's Aeronautics wind force integration (see CLAUDE.md).
 # Sable is the actual technical dependency (AeronauticsWindForceApplier's API surface);
 # Create is Sable's own optional dependency and is declared here too since it's present
