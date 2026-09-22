@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils;
 
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.integration.aeronautics.AeronauticsIntegration;
+import com.postmalloy.aeroweather.integration.simulated.WindBearingIntegration;
 import com.postmalloy.aeroweather.registry.AeroWeatherBlockEntityTypes;
 import com.postmalloy.aeroweather.registry.AeroWeatherBlocks;
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
@@ -44,5 +45,8 @@ public class AeroWeather {
 
         // Start the Aeronautics wind force integration (a no-op unless Sable is installed)
         AeronauticsIntegration.get().start(modEventBus);
+
+        // Register the wind bearing (a no-op unless Create, Simulated and Sable are installed)
+        WindBearingIntegration.start(modEventBus);
     }
 }

@@ -33,6 +33,10 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     private static final String WINDMILL_MIXIN = "WindmillBearingBlockEntityMixin";
     private static final String PARTICLE_RAIN_MODID = "particlerain";
     private static final String PARTICLE_RAIN_MIXIN = "ParticleRainWindMixin";
+    private static final String SIMULATED_MODID = "simulated";
+    private static final List<String> SIMULATED_MIXINS =
+            List.of("SwivelBearingInternals", "WindBearingPlateMixin", "WindBearingPlateParentMixin",
+                    "ScrollValueSlotAccessor");
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -54,12 +58,15 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        List<String> mixins = new ArrayList<>(2);
+        List<String> mixins = new ArrayList<>(6);
         if (isLoaded(CREATE_MODID)) {
             mixins.add(WINDMILL_MIXIN);
         }
         if (isLoaded(PARTICLE_RAIN_MODID)) {
             mixins.add(PARTICLE_RAIN_MIXIN);
+        }
+        if (isLoaded(SIMULATED_MODID)) {
+            mixins.addAll(SIMULATED_MIXINS);
         }
         return mixins;
     }

@@ -133,6 +133,33 @@ neoForge {
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+
+    // Jars we only unpack, never put on a classpath directly - see extractModLibs (M13).
+    modLibSources
+}
+
+// The Wind Bearing (M13) subclasses Create Simulated's swivel bearing, so Create and
+// Simulated have to be on the COMPILE classpath, not just localRuntime. Neither can be
+// depended on directly:
+//   - create-aeronautics is a "lowcodefml" container with zero classes of its own; the real
+//     `simulated` jar sits inside it under META-INF/jarjar/.
+//   - Create's classes ARE at the top level of its jar, but its supertypes reach into
+//     Ponder (SmartBlockEntity implements ponder's VirtualBlockEntity), and Create ships
+//     Ponder, Flywheel and Registrate the same jarjar way.
+// So unpack every nested jar out of both and compile against the results. Nothing new is
+// downloaded for this - both artifacts are already fetched for localRuntime - and no extra
+// Maven repositories are needed. Filenames carry versions, hence the glob.
+def extractedModLibsDir = layout.buildDirectory.dir("extracted-mod-libs").get().asFile
+
+tasks.register("extractModLibs", Copy) {
+    description = "Unpacks jarjar-nested mod libraries needed on the compile classpath."
+    from(provider { configurations.modLibSources.files.collect { zipTree(it) } }) {
+        include "META-INF/jarjar/*.jar"
+    }
+    // Flatten: drop the META-INF/jarjar/ prefix so the output is just a folder of jars.
+    eachFile { it.relativePath = new RelativePath(true, it.name) }
+    includeEmptyDirs = false
+    into extractedModLibsDir
 }
 
 dependencies {
@@ -162,6 +189,17 @@ dependencies {
     // WindmillBearingBlockEntityMixin). compileOnly only: NeoForge already bundles this exact
     // artifact via jarJar, so shipping our own copy would be a duplicate at runtime.
     compileOnly "io.github.llamalad7:mixinextras-neoforge:${mixinextras_version}"
+
+    // Wind Bearing (M13): subclassing Create Simulated's swivel bearing needs Create and
+    // Simulated at compile time. Create's own classes come straight from its jar; Simulated,
+    // Ponder, Flywheel and Registrate are unpacked out of the two bundles by extractModLibs
+    // above. compileOnly throughout - all of it is already present at runtime via
+    // localRuntime (dev) or the player's own install, and the block only registers when
+    // create + simulated + sable are all loaded (see WindBearingIntegration).
+    modLibSources "maven.modrinth:create:${create_version}"
+    modLibSources "maven.modrinth:create-aeronautics:${create_aeronautics_version}"
+    compileOnly "maven.modrinth:create:${create_version}"
+    compileOnly fileTree(dir: extractedModLibsDir, include: "*.jar").builtBy("extractModLibs")
 
     // Particle Rain (M12): its weather particles are blown by our wind instead of the noise
     // it generates for itself. localRuntime only - ParticleRainWindMixin names the mod purely

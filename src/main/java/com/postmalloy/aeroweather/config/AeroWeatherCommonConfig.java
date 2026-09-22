@@ -57,6 +57,9 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue BREEZE_MAKER_PUSH_RADIUS;
     public static final ModConfigSpec.DoubleValue BREEZE_MAKER_PUSH_STRENGTH;
 
+    public static final ModConfigSpec.BooleanValue WIND_BEARING_ENABLED;
+    public static final ModConfigSpec.DoubleValue WIND_BEARING_FACING_OFFSET_DEGREES;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -214,6 +217,18 @@ public final class AeroWeatherCommonConfig {
         BREEZE_MAKER_PUSH_STRENGTH = builder
                 .comment("How hard they're pushed, on vanilla's knockback scale (an ordinary melee hit is 0.4). Knockback resistance still applies.")
                 .defineInRange("breezeMakerPushStrength", 1.0, 0.0, 5.0);
+        builder.pop();
+
+        builder.comment(
+                "The wind bearing, which turns its assembled contraption to face the wind while it has",
+                "rotational power. Ignored unless Create, Create Simulated and Sable are all installed."
+        ).push("windBearing");
+        WIND_BEARING_ENABLED = builder
+                .comment("Whether wind bearings turn toward the wind. When off they hold their contraption still, since nothing else drives them.")
+                .define("windBearingEnabled", true);
+        WIND_BEARING_FACING_OFFSET_DEGREES = builder
+                .comment("Added to the wind's bearing before the contraption is turned to it. A contraption has no inherent front - angle 0 is however it was assembled - so build yours facing north and leave this at 0, or set it to whichever bearing its front faced when assembled (90 for east, and so on).")
+                .defineInRange("windBearingFacingOffsetDegrees", 0.0, -180.0, 180.0);
         builder.pop();
 
         SPEC = builder.build();

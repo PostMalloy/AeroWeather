@@ -49,7 +49,12 @@
   "aeroweather.configuration.windVaneFullSignalStrength": "Strength for Full Signal",
   "block.aeroweather.zinc_wind_vane": "Zinc Wind Vane",
   "block.aeroweather.brass_wind_vane": "Brass Wind Vane",
+  "block.aeroweather.wind_bearing": "Wind Bearing",
+  "block.aeroweather.wind_bearing_plate": "Wind Bearing Plate",
 
+  "aeroweather.configuration.windBearing": "Wind Bearing Settings",
+  "aeroweather.configuration.windBearingEnabled": "Turn Bearings into the Wind",
+  "aeroweather.configuration.windBearingFacingOffsetDegrees": "Contraption Facing Offset (deg)",
   "aeroweather.configuration.breezeMaker": "Breeze Maker Settings",
   "aeroweather.configuration.breezeMakerDurationSeconds": "Breeze Duration (sec)",
   "aeroweather.configuration.breezeMakerStrength": "Breeze Strength",

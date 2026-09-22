@@ -60,6 +60,13 @@ block/
   WindVaneBlockEntity.java            GeoBlockEntity shared by both vanes; client-only transient heading, eased toward LocalWind
   WindVaneBlockItem.java              BlockItem + GeoItem for both vanes; same geo, texture named after its block
 
+  WindBearingBlock.java               extends Create Simulated's SwivelBearingBlock; swaps in our block entity and
+                                       strips the side cog's connections (see M13)
+  WindBearingBlockEntity.java         extends their SwivelBearingBlockEntity; drives the servo's target angle toward
+                                       LocalWind at a rate set by its own shaft speed
+  WindBearingPlateBlock.java          extends their SwivelBearingPlateBlock: the top piece a wind bearing leaves on its
+                                       contraption, identical but for its model, which carries the arrow
+
 item/
   BreezeMakerItem.java                SwordItem on a 60-use copy of Tiers.IRON; right-clicking the air starts a
                                        timed wind override (a breeze) blowing the way the player faces (see M11)
@@ -143,14 +150,29 @@ integration/
   particlerain/
     ParticleRainWind.java             the wind vector handed to Particle Rain's weather particles; zero Particle
                                        Rain types, always safe to classload (see M12)
+  simulated/
+    WindBearingIntegration.java       the M13 gate: zero Create/Simulated/Sable imports, checks all three with
+                                       ModCompat before touching WindBearingRegistration at all
+    WindBearingRegistration.java      the wind bearing's (and its plate's) own DeferredRegisters + creative tab;
+                                       conditional, so it can't live in registry/ (see M13)
+    WindBearingShaftRendering.java    client-only, gated: Create's ShaftVisual (Flywheel) + ShaftRenderer (fallback)
+                                       for the bearing and its plate, so each turns a shaft on its axis
 
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
-                                       LoadingModList says that mod is installed ("create", "particlerain")
+                                       LoadingModList says that mod is installed ("create", "particlerain", "simulated")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
                                        Particle Rain only by string target/descriptor (see M12)
+  SwivelBearingInternals.java         interface @Mixin on Simulated's SwivelBearingBlockEntity: an @Accessor for the
+                                       private targetAngleDegrees plus two @Invokers (see M13)
+  ScrollValueSlotAccessor.java        interface @Mixin on Create's ScrollValueBehaviour: an @Accessor for the
+                                       package-private slotPositioning, to move an inherited value box (see M13)
+  WindBearingPlateMixin.java          on the same class: a wind bearing places WindBearingPlateBlock on assembly, and
+                                       its six plate-still-there checks accept it (see M13)
+  WindBearingPlateParentMixin.java    on their SwivelBearingPlateBlockEntity: breaking a wind bearing's plate breaks
+                                       the wind bearing, as it does a swivel bearing
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -455,7 +477,7 @@ Reversal itself is opt-in: `windmillReverseWhenBehind` defaults to `false`,
 so by default wind from behind drives a windmill forwards, the same as
 wind from the front.
 
-### The mixin (the codebase's only one)
+### The mixin
 
 There is **no Create API for generated speed** — `api/event/` has only
 `BlockEntityBehaviourEvent`/`PipeCollisionEvent`/`TrackGraphMergeEvent`,
@@ -843,6 +865,273 @@ null - calm means rain falls straight down, not that the mod's noise resumes.
 base strength are cached per client tick; only the per-Y height scaling is
 recomputed per call.
 
+## M13: Wind bearing
+
+A **wind bearing** is Create Simulated's swivel bearing with one behaviour
+swapped: instead of integrating the speed of a side cogwheel into the servo's
+target angle, it turns the assembled contraption to face the **wind** — a
+powered weathervane big enough to carry a build. Everything else — assembly,
+the `RotaryConstraintHandle` servo, persistence, locking, and stress
+pass-through base ↔ top ↔ contraption — is inherited untouched.
+
+This is the first feature that makes AeroWeather a Create **addon** at build
+level: `WindBearingBlock`/`WindBearingBlockEntity` subclass Simulated types, so
+Create, Simulated, Registrate, Flywheel and Ponder are all on the compile
+classpath (see "Build classpath" below). Nothing about that is required at
+*runtime* — the block simply doesn't exist without those mods.
+
+### What it changes, and what stress does
+
+`SwivelBearingBlockEntity.tick()` runs:
+
+```java
+float angularSpeed = convertToAngular(this.limitCogSpeed(this.cogwheel.getSpeed()));
+this.targetAngleDegrees += angularSpeed;   // integrate the side cog's speed
+this.targetAngleDegrees %= 360;
+```
+
+`WindBearingBlockEntity.tick()` calls `super.tick()` unchanged and then, on the
+server, overwrites that target:
+
+```
+target  = wrap(windBearingFacingOffsetDegrees - windFromBearing)   // LocalWind, ship-aware; negated facing down
+maxStep = |convertToAngular(getSpeed())|                           // this block's OWN node
+angle  += clamp(shortestArc(target - angle), ±maxStep)
+```
+
+- **Rotation is what moves it, and only from the top or bottom.** `maxStep`
+  comes from `getSpeed()` — the block's *own* kinetic node, which for a bearing
+  facing UP/DOWN is exactly its top and bottom faces. With no power the target
+  holds and the servo just keeps the contraption where it is; the faster the
+  network runs, the quicker it tracks. The cogwheel's speed is deliberately
+  **never** consulted, unlike the swivel bearing.
+- **There is no side cog input at all.** `WindBearingBlock` overrides
+  `getExtraKineticsRotationConfiguration()` to return an `IRotate` that is
+  neither a small nor a large `ICogWheel` and reports `hasShaftTowards == false`
+  on every face. Create's propagator only links a node through a shaft or a cog,
+  so the inherited extra node survives with no possible connection. Removing the
+  *node* instead is not safe: every ExtraKinetics lifecycle hook in Simulated's
+  `KineticBlockEntityMixin` null-checks `getExtraKinetics()`, but
+  `SwivelBearingBlockEntity.tick()` calls `this.cogwheel.tick()` on the private
+  field **directly**, so a null node would tick a block entity that never got a
+  level. Kill the connections, keep the node.
+- **Stress pass-through costs us nothing.** It runs through
+  `propagateRotationTo`/`isCustomConnection`/`addPropagationLocations` keyed off
+  `getPlatePos()` — the main node connects to the plate block riding the
+  contraption, along the block's own axis. The cogwheel is a *separate* network
+  (`shouldConnectExtraKinetics()` returns `false`), so dropping it cannot break
+  pass-through. Simulated even ships a `passthrough` ponder scene for it.
+- **Vertical axis only.** If `FACING` isn't UP/DOWN the wind target is skipped
+  and the block behaves exactly like a swivel bearing — "into the wind" means
+  nothing about a horizontal axis. Same reasoning as M9's windmill rule.
+- **Direction comes from `LocalWind.at(level, pos)`**, so a bearing mounted on a
+  moving Sable ship reads wind in that ship's frame, like the vane and windmills.
+- **`windBearingFacingOffsetDegrees`** exists because a contraption has no
+  inherent "front": angle 0 is however it happened to be assembled. Build the
+  vane facing north and the default 0 is right; build it facing east, set 90.
+- **Waking the physics.** A contraption at rest sleeps, and a sleeping body
+  won't notice a new servo target. The swivel bearing wakes it whenever its own
+  angle moves; ours must too, since the rotation driving us isn't the one it
+  watches — hence `wakePhysics()`, which wakes both the attached sub-level and
+  the containing one via
+  `ServerSubLevelContainer.physicsSystem().getPipeline().wakeUp(...)`.
+- **A downward-facing bearing needs `180 - target`, not `-target`.** Simulated takes
+  the servo's zero from `Direction.getRotation()` on the plate's facing, and `DOWN`'s
+  is a 180° turn about X. That one quaternion does two things: it reverses the Y axis
+  (so the angle runs backwards — the negation) *and* carries north to south (so zero
+  is itself half a turn out — the 180). With only the negation, an upside-down bearing
+  pointed exactly downwind. The plate's `facing=down` blockstate is plain `x:180`, the
+  same convention, so the arrow and the physics agree; an attempt to "fix" the arrow
+  with `x:180, y:180` only made the plate flip visibly at assembly.
+- **The servo angle runs counter-clockwise from above** — against the compass.
+  Established live, not from bytecode: with the target first written as
+  `wind + offset`, a north wind (0°, sign-invariant) lined up but a northeast one
+  (45°) landed on northwest. A build whose front sits at bearing `offset` at angle 0
+  faces `offset − angle` once turned, hence `angle = offset − wind`. A
+  downward-facing bearing negates that, mirroring Simulated's own negation of
+  `angularSpeed` for negative axis directions; that half is still unconfirmed live.
+
+### The locking menu's value box
+
+The wind bearing inherits Simulated's redstone-locking menu, and with it the
+`ValueBoxTransform` that decides where on the block you hover to open it. Both that
+one and Create's start from `CenteredSideValueBoxTransform` and then push the box
+back along the facing axis, but by different amounts — Simulated's
+`SelectionModeValueBox` by 5px (`0.3125`), Create's `DirectionalExtenderScrollOptionSlot`
+by 2px (`-0.125`). The inherited box therefore sat 3px lower than on every Create
+bearing. `WindBearingBlockEntity.addBehaviours` swaps in Create's own slot — the same
+object the windmill, clockwork and mechanical bearings get from
+`IBearingBlockEntity.getMovementModeSlot()` — so the position matches by
+construction rather than by a copied constant.
+
+It has to be swapped onto the behaviour `super` already built, not handed to a
+replacement: `SwivelBearingBlockEntity` keeps its own reference to that behaviour and
+reads the locking mode back through it, so a substitute in the list would be ignored.
+`slotPositioning` is package-private with only a getter, hence
+`mixin/ScrollValueSlotAccessor`.
+
+### The accessor mixin
+
+`targetAngleDegrees` is private with only a getter — no setter anywhere, not
+even on Simulated's own ComputerCraft peripheral — and the two sub-level lookups
+are private methods. `mixin/SwivelBearingInternals` is an **interface mixin** on
+Simulated's `SwivelBearingBlockEntity` carrying one `@Accessor` and two
+`@Invoker`s; since `WindBearingBlockEntity` extends that class, it just casts
+itself to the interface. Withheld entirely by `AeroWeatherMixinPlugin` when
+`simulated` is absent. These are internals, not API: a Simulated rename breaks
+this at class-transform time, which is the accepted cost of building on their
+bearing rather than reimplementing assembly and cross-contraption kinetics.
+
+### Registration is conditional
+
+The block and block entity classes reference Create, Simulated and Sable types,
+so they must never classload without all three. `WindBearingIntegration` (zero
+such imports, always safe) checks `ModCompat.isLoaded` for `create`, `simulated`
+and `sable`, and only then calls `WindBearingRegistration`, which owns its **own**
+`DeferredRegister`s for the block, item and block entity type — the shared ones
+under `registry/` are registered unconditionally and can't hold a conditional
+entry. Its creative-tab listener is added with `modEventBus.addListener` rather
+than `@EventBusSubscriber`, for the same reason `AeronauticsWindForceApplier`
+does: annotation scanning happens regardless of the gate.
+
+`WindBearingBlock` overrides `getBlockEntityType()` but deliberately **not**
+`getBlockEntityClass()` — `IBE`'s `Class<T>` is invariant, so narrowing it
+doesn't compile, and the inherited `SwivelBearingBlockEntity.class` already
+accepts our subclass.
+
+### Build classpath
+
+`create-aeronautics` is a `lowcodefml` container with **zero classes**, and
+`simulated` exists only as a nested jar with no standalone Maven artifact.
+Create's own jar has its classes at top level *and* bundles `flywheel`, `ponder`
+and `Registrate` under `META-INF/jarjar/`. So `build.gradle` declares a
+`modLibSources` configuration and an `extractModLibs` `Copy` task that globs
+`META-INF/jarjar/*.jar` out of the Create and Aeronautics artifacts the build
+already downloads, flattens them into `build/extracted-mod-libs/`, and adds that
+directory as `compileOnly fileTree(...).builtBy("extractModLibs")`. **No new
+Maven repositories** — including for **catnip**, which Create 6.0.10 does not ship at
+top level but which rides along inside its bundled `ponder` jar
+(`net.createmod.catnip`, 274 classes). An earlier note here said catnip was neither
+bundled nor needed; both halves were wrong — Create's own kinetic renderers return
+catnip's `SuperByteBuffer`, so the shaft rendering below compiles against it. Note `.builtBy("extractModLibs")` must be
+the method form — the `builtBy:` map key fails with "Cannot cast object
+'extractModLibs' … to class 'java.lang.Iterable'".
+
+### The shaft
+
+The bearing and its plate each draw a turning shaft along their `FACING` axis —
+bottom to top on an upright bearing — at the speed of whatever kinetic network they
+are on. Both come straight from Create: `ShaftRenderer` renders
+`AllBlocks.SHAFT`'s blockstate turned by `getRotationAxisOf(be)`, and takes its angle
+from the block entity's own `getSpeed()`, so it stays in step with every other
+Create block on the network for free.
+
+**Registering one of the two is not enough**, and this is the trap:
+`KineticBlockEntityRenderer.renderSafe` **returns immediately** when
+`VisualizationManager.supportsVisualization(level)` — true whenever Flywheel's
+backend is on, which is the default. So a block entity renderer alone draws nothing
+for most players. `integration/simulated/WindBearingShaftRendering` registers both:
+- `ShaftVisual` via `SimpleBlockEntityVisualizer.builder(type).factory(ShaftVisual::new).apply()`
+  on `FMLClientSetupEvent` (through `enqueueWork` — client setup runs off-thread and
+  the visualizer registry is a plain map). This is the path that actually runs
+  normally. **Registered for the bearing only.** The plate lives inside a Sable
+  sub-level, and Sable draws a sub-level's block entities through the vanilla renderer
+  path wrapped in the contraption's pose — a path that never consults Flywheel's
+  `skipVanillaRender`. Give the plate a visual and it draws twice, at slightly
+  different angles, because the two paths interpolate partial ticks differently.
+  Simulated's `link_block` package likewise has a renderer and no `Visual`, while the
+  rest of that mod has a dozen.
+- `ShaftRenderer` on `EntityRenderersEvent.RegisterRenderers`, the fallback for a
+  disabled backend. The builder marks the type as skipping vanilla rendering while
+  the backend is on, so the two never draw together.
+
+It's reached only from `WindBearingRegistration.register`, behind
+`FMLEnvironment.dist.isClient()`, so a dedicated server never classloads a renderer.
+
+Simulated's swivel bearing splits this the same way (`SwivelBearingRenderer` plus
+`SwivelBearingVisual`) and renders `SHAFT_SIXTEENTH` stubs rather than a whole shaft,
+because its middle is occupied by the side cog the wind bearing doesn't have.
+
+### Models and the arrow on the plate
+
+Simulated's `LICENSE.md` is split: code MIT, **assets All Rights Reserved**, naming
+exactly the directory the swivel bearing's texture and model live in. So nothing of
+theirs is copied — the geometry here is authored from scratch, mirroring their
+*structure* only, and the textures are generated dummies for the user to replace.
+Models live under `models/block/wind_bearing/`:
+
+| Model | Role |
+|---|---|
+| `block_assembled` | the housing alone — what stays behind once the plate rides off |
+| `bearing_plate` | the top piece, with an arrow inlaid in it pointing north (−Z) |
+| `block` | housing + plate, i.e. the unassembled block |
+| `item` | the same as `block`, for the inventory |
+
+Simulated's set also has an `ironcog`, a Flywheel `PartialModel` their block entity
+renderer spins as the side cog. The wind bearing has no side cog, so it has no
+`ironcog` and no renderer.
+
+Both blockstates use Simulated's own x/y rotation table unchanged, models authored
+for `facing=up`.
+
+**The arrow shows where the top is facing, not where the wind is.** It's part of
+the plate, and the plate rides the contraption, so it turns with whatever the
+bearing has swivelled. An earlier version kept a separate `wind_from` blockstate
+arrow on the housing that tracked the wind directly; it was dropped as redundant.
+The models and textures are the user's own (Blockbench); the arrow lives in the
+plate texture rather than in separate geometry. Don't regenerate them.
+
+**Every model needs an explicit `particle` texture, and a Blockbench re-export drops
+it.** Break and landing particles come from `textures.particle` on whatever model the
+blockstate selects, and a model without one renders them as the missing texture.
+Blockbench only writes the key when a texture is flagged as the particle texture in
+the project, so after a re-export of `block`, `block_assembled` or `item`, check that
+each still carries `"particle": "aeroweather:block/wind_bearing_plate"` — they lost it
+once already.
+
+**Why the plate needs its own block.** Once assembled, the swivelling top piece
+isn't part of our block at all: `SwivelBearingBlockEntity.assemble()` places
+`SimBlocks.SWIVEL_BEARING_LINK_BLOCK` (Simulated's plate, with Simulated's model)
+into the new contraption, by a hardcoded reference. A block's model can't vary with
+which bearing placed it, so an arrow on *our* plate needs a plate block of our own:
+`WindBearingPlateBlock extends SwivelBearingPlateBlock`, overriding only its block
+entity type and its pick-block item. Its block entity is Simulated's own
+`SwivelBearingPlateBlockEntity` class under our own type, since a type only accepts
+the blocks it was built with. It gets the block entity renderer half of the shaft
+rendering (see "The shaft"), so rotation carries on visually into the contraption.
+
+`mixin/WindBearingPlateMixin` makes Simulated use it:
+- `@ModifyExpressionValue` on the one `BlockEntry.getDefaultState()` call in
+  `assemble()` swaps in our plate's default state — **only when `this` is a
+  `WindBearingBlockEntity`**, so swivel bearings still place theirs.
+- `@WrapOperation` on `BlockState.is(Holder)` in the six methods that check the
+  plate is still there — `tick`, `checkPersistence`, `reattachConstraint`,
+  `associatePlateWithParent`, `attachConstraints`, `destroyPlate`, one call each
+  — also accepts a `WindBearingPlateBlock`. Missing any of them would make the
+  bearing conclude its plate was gone. `destroyPlate` then casts the *link* block's
+  entry to `SwivelBearingPlateBlock` only to call `withBlockEntityDo`, which checks the
+  block entity's class, not the block; ours passes.
+
+`mixin/WindBearingPlateParentMixin` covers the reverse link. Breaking a plate breaks
+its bearing via the plate BE's `destroyBearing()`, which first checks
+`state.is(SimBlocks.SWIVEL_BEARING)` — false for a wind bearing, so without this a
+broken wind bearing plate would leave the bearing standing and still convinced it
+was assembled.
+
+Every method named above was confirmed declared on the **target** class itself,
+not inherited (see M9's `@Shadow` note). These are Simulated internals: a rename
+breaks the mixins at class-transform time, which can only happen where Simulated is
+installed.
+
+The plate matches Simulated's own plate otherwise: no item, it drops a wind
+bearing, and it's tagged `create:non_movable` and pickaxe-mineable. Both blockstates
+use plain `variants` keyed on `facing` (plus `assembled` for the bearing) with
+Simulated's own x/y rotation table, models authored for `facing=up`; the bearing's
+keys omit `powered`, which a variant key may leave out to match every value.
+
+The recipe (a zinc wind vane over a swivel bearing over a brass casing) carries
+`neoforge:conditions` for all three mods.
+
 ## Command reference
 
 ```
@@ -892,11 +1181,26 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   `particlerain` is absent. Its helper,
   `integration/particlerain/ParticleRainWind`, contains no Particle Rain
   references at all and is always safe to classload.
-- Build dependency pattern: Sable needs `compileOnly`+`localRuntime`
-  (it's the actual API surface used — Sable's sub-level API is
-  content-agnostic, so AeroWeather doesn't need Create/Create Aeronautics
-  as a compile dependency at all, only `localRuntime` for dev-client
-  testing). Sable Companion's `sable-companion-common-1.21.1` module is
+- **Fourth sanctioned exception, and the widest (M13)**: the wind bearing's
+  `block/WindBearingBlock`, `block/WindBearingBlockEntity` and
+  `block/WindBearingPlateBlock` reference Create, Simulated **and** Sable types
+  directly, by import, not by string, as does `WindBearingRegistration`. What keeps
+  the rule intact is that nothing touches them without a gate:
+  `integration/simulated/WindBearingIntegration` checks all three modids before
+  calling `WindBearingRegistration`, the only way in. The three Simulated mixins
+  (`SwivelBearingInternals`, `WindBearingPlateMixin`, `WindBearingPlateParentMixin`)
+  are withheld by the mixin plugin when Simulated is absent; the two plate mixins do
+  reference our block classes, but only via `instanceof` checks inside Simulated's
+  own code, which can only run where Simulated (and so Create and Sable) exist.
+  Don't reference any of these classes from `registry/`, from `AeroWeather`
+  directly, or from any client code.
+- Build dependency pattern: Sable and Create are both
+  `compileOnly`+`localRuntime`. Sable was always the real API surface;
+  **Create joined it at M13**, when the wind bearing began subclassing a
+  Simulated block — Simulated itself, plus Create's bundled
+  Registrate/Flywheel/Ponder, come from `extractModLibs` rather than a
+  repository (see M13's "Build classpath"). Everything through M12 still
+  needs none of them at compile time. Sable Companion's `sable-companion-common-1.21.1` module is
   `implementation` (designed to be embedded, ships safe no-op defaults;
   the `jarJar` half — embedding it into AeroWeather's own published jar
   — is still open, see "Open questions").
@@ -927,11 +1231,11 @@ Not building yet, don't add speculative abstractions for these — YAGNI,
 but don't actively make future extension harder either:
 
 - New weather pattern types (tornadoes, custom storms, etc.)
-- New blocks/items beyond the two wind vanes and the breeze maker (anemometers, handheld wind
-  meters, etc.)
+- New blocks/items beyond the two wind vanes, the breeze maker and the wind
+  bearing (anemometers, handheld wind meters, etc.)
 - Anything beyond wind simulation + its Create/Create Aeronautics
-  interaction (windmill response and contraption force are in scope;
-  other Create kinetic generators are not)
+  interaction (windmill response, contraption force and the wind bearing are
+  in scope; other Create kinetic generators are not)
 
 ## Roadmap / milestones
 
@@ -970,10 +1274,25 @@ but not yet live-tested.**
 but not yet live-tested** - it needs Particle Rain installed in the dev client,
 which `localRuntime` now provides.
 
+**M13 (the wind bearing, see its section) is written and compile-verified, but
+not yet live-tested.** Verified statically: it compiles against the real Create
+and Simulated classes; the built jar carries the block, block entity,
+registration, gate and mixin classes plus the blockstate, models, placeholder
+textures, loot table and the recipe with its three-mod `neoforge:conditions`
+block. The block itself was then reported working in a live client. The own-plate
+change (the arrow on the plate, and the two mixins that make Simulated use it) is
+confirmed working in a live client, as is the rotation sign for both upward- and
+downward-facing bearings (each took one fix — see that section). Not confirmed yet:
+that the bearing keeps treating our plate as its plate across save/reload, that
+breaking the plate breaks the bearing, that no cogwheel can connect to any side,
+stress pass-through base to contraption, and the whole thing on a moving ship.
+
 ## External references
 
 - Create: real modId `create`. Modrinth project `create` (id
-  `LNytGWDc`). Not a compile dependency — `localRuntime` only.
+  `LNytGWDc`). `compileOnly`+`localRuntime` as of M13 — the wind bearing
+  subclasses a Simulated block, which drags Create in. Before M13 it was
+  `localRuntime` only.
 - Create Aeronautics ("Simulated Project"):
   https://github.com/Creators-of-Aeronautics/Simulated-Project. Ships as
   a single "bundled" jar (Modrinth project `create-aeronautics`, id
@@ -985,9 +1304,17 @@ which `localRuntime` now provides.
   - `aeronautics` (Create Aeronautics proper, pkg `dev.eriksonn.aeronautics`)
     — propellers, hot air balloons, levitite.
   - `offroad` (Create Offroad, pkg `dev.ryanhcode.offroad`) — land vehicles.
-  None of these three expose the physics API AeroWeather needs — that's
-  entirely Sable's, so AeroWeather needs no compile dependency on Create
-  or Create Aeronautics at all, only `localRuntime` for dev-client testing.
+  **Licence is split**: `LICENSE.md` puts the code under MIT but the
+  **assets All Rights Reserved**, naming the content directories
+  explicitly. Subclassing their blocks is fine; copying a texture or a
+  model is not (see M13).
+  **None of these three expose the physics API AeroWeather needs** — that's
+  entirely Sable's. Through M12 that meant no compile dependency on Create or
+  Aeronautics at all; **M13 changed that**, since the wind bearing subclasses
+  Simulated's swivel bearing. `simulated` has no standalone Maven artifact and
+  the bundle jar carries no classes of its own, so its jar (and Create's
+  bundled Registrate/Flywheel/Ponder) are extracted from the already-downloaded
+  artifacts by `extractModLibs` — see M13's "Build classpath".
 - Sable: https://github.com/ryanhcode/sable — the Rapier-based physics
   engine underneath. Real modId `sable`. Modrinth project `sable` (id
   `T9PomCSv`). Package root `dev.ryanhcode.sable`. This is AeroWeather's

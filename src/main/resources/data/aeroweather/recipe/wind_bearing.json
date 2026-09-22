@@ -1,0 +1,38 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "create"
+    },
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "simulated"
+    },
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "sable"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "b": {
+      "item": "create:brass_casing"
+    },
+    "s": {
+      "item": "simulated:swivel_bearing"
+    },
+    "v": {
+      "item": "aeroweather:zinc_wind_vane"
+    }
+  },
+  "pattern": [
+    " v ",
+    " s ",
+    " b "
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeroweather:wind_bearing"
+  }
+}

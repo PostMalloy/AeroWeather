@@ -1,0 +1,56 @@
+{
+  "variants": {
+    "assembled=false,facing=up": {
+      "model": "aeroweather:block/wind_bearing/block"
+    },
+    "assembled=true,facing=up": {
+      "model": "aeroweather:block/wind_bearing/block_assembled"
+    },
+    "assembled=false,facing=down": {
+      "model": "aeroweather:block/wind_bearing/block",
+      "x": 180
+    },
+    "assembled=true,facing=down": {
+      "model": "aeroweather:block/wind_bearing/block_assembled",
+      "x": 180
+    },
+    "assembled=false,facing=north": {
+      "model": "aeroweather:block/wind_bearing/block",
+      "x": 90
+    },
+    "assembled=true,facing=north": {
+      "model": "aeroweather:block/wind_bearing/block_assembled",
+      "x": 90
+    },
+    "assembled=false,facing=east": {
+      "model": "aeroweather:block/wind_bearing/block",
+      "x": 90,
+      "y": 90
+    },
+    "assembled=true,facing=east": {
+      "model": "aeroweather:block/wind_bearing/block_assembled",
+      "x": 90,
+      "y": 90
+    },
+    "assembled=false,facing=south": {
+      "model": "aeroweather:block/wind_bearing/block",
+      "x": 90,
+      "y": 180
+    },
+    "assembled=true,facing=south": {
+      "model": "aeroweather:block/wind_bearing/block_assembled",
+      "x": 90,
+      "y": 180
+    },
+    "assembled=false,facing=west": {
+      "model": "aeroweather:block/wind_bearing/block",
+      "x": 90,
+      "y": 270
+    },
+    "assembled=true,facing=west": {
+      "model": "aeroweather:block/wind_bearing/block_assembled",
+      "x": 90,
+      "y": 270
+    }
+  }
+}
