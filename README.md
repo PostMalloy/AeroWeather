@@ -42,6 +42,10 @@ The mod was designed to be as configurable as possible.
 
 * Aeronautics force calculations and maximum forces are also configurable.
 
+## Compatibility
+
+* [Particle Rain](https://modrinth.com/mod/particle-rain): particles are wind-driven and move in the direction of the wind.
+
 ## Future Features
 
 * Wind sounds that scale based on local wind speed
@@ -50,11 +54,9 @@ The mod was designed to be as configurable as possible.
 
 * More items and blocks to interact with the wind feature (handheld/placeable anemometer)
 
-* Integration with Particle Rain - wind will influence the angle of the rain particles and the frequency, speed and angle of falling leaves.
-
 ## Out of Scope - Will Not Be Implemented
 
-* Integration with other weather mods (E.G. Protomanly's Weather) - The idea with this mod is to keep things simple.
+* Integration with other weather mods (E.G. Protomanly's Weather)
 
 
 ## AI Disclosure
