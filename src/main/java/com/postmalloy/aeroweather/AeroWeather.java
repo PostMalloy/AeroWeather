@@ -12,6 +12,7 @@ import com.postmalloy.aeroweather.registry.AeroWeatherBlocks;
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
 import com.postmalloy.aeroweather.registry.AeroWeatherItems;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
+import com.postmalloy.aeroweather.registry.AeroWeatherSounds;
 import com.postmalloy.aeroweather.wind.BiomeWindEvents;
 
 import net.neoforged.bus.api.IEventBus;
@@ -47,6 +48,9 @@ public class AeroWeather {
 
         // Register wind particle types
         AeroWeatherParticles.PARTICLE_TYPES.register(modEventBus);
+
+        // Register the looping wind ambience sound events
+        AeroWeatherSounds.SOUND_EVENTS.register(modEventBus);
 
         // Register the wind vane block, its item and its block entity type
         AeroWeatherBlocks.BLOCKS.register(modEventBus);

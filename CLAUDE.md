@@ -74,7 +74,8 @@ item/
 config/
   AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds,
                                        aeronautics force, windmill, wind vane and breeze maker tuning
-  AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption gating
+  AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption
+                                       gating, Particle Rain angles, wind sound layers
 
 wind/
   WindDirection.java                  cardinal enum (StringRepresentable, backs WIND_FROM) + degree/vector helpers;
@@ -118,6 +119,9 @@ client/
     AmbientWindDrift.java             pure function: wind-driven target velocity at a Y, for vanilla particle overrides below
     WindDriftingCampfireSmokeParticle.java  extends vanilla CampfireSmokeParticle, eases toward AmbientWindDrift's target
     WindDriftingCherryParticle.java   extends vanilla CherryParticle (cherry_leaves), same wind-easing treatment
+  sound/
+    WindLoopSoundInstance.java        one looping layer: relative to the listener, no attenuation, canStartSilent (see M15)
+    WindSoundManager.java             ClientTickEvent.Post: eases both layers' volumes toward the local wind
   render/
     WindVaneGeoModel.java             DefaultedBlockGeoModel; turns the "vane" bone to the block entity's heading, and
                                        picks each vane's texture by its block id (one geo shared by both)
@@ -128,6 +132,7 @@ client/
 
 registry/
   AeroWeatherParticles.java           DeferredRegister<ParticleType<?>>: WIND_STREAK, WIND_GUST, WIND_LOOP
+  AeroWeatherSounds.java              DeferredRegister<SoundEvent>: wind1 (light layer), wind2 (heavy layer)
   AeroWeatherCommandArgumentTypes.java  DeferredRegister<ArgumentTypeInfo<?,?>>: registers DirectionArgument for command-tree sync
   AeroWeatherBlocks.java              DeferredRegister.Blocks: ZINC_WIND_VANE, BRASS_WIND_VANE (copper sounds, pickaxe, strength 3)
   AeroWeatherItems.java               DeferredRegister.Items: both vanes; brass in the Redstone Blocks tab, zinc in Functional Blocks
@@ -1326,6 +1331,48 @@ cached travel vector is *rotated* by the offset rather than rebuilt, since
 (sampled at the camera so a held vane agrees with a placed one) and
 `/aeroweather wind info`, which now reports the local value as well as the base.
 
+## M15: Wind sounds
+
+Two looping ambience layers whose volume follows the wind **where the player is
+standing** — so biome and altitude both count, via the same
+`LocalWind.at(level, player.blockPosition())` everything else uses.
+
+Both layers play at once by design. The light one (`wind1`) fades in from
+strength 10 and is at full by 50; the heavy one (`wind2`) fades in from 50 and is
+full at 100. So across the top half of the range you hear light wind **plus**
+something heavier, rather than one sound swapped for another. All four thresholds
+are config, so the curves can be reshaped without touching code — e.g. setting
+the light layer's full strength to 100 makes it ramp across the whole range
+instead of topping out halfway.
+
+Volume eases toward its target by a fraction per tick (`windSoundFadeRate`,
+default 0.02, a couple of seconds to settle) rather than tracking it directly.
+Wind strength genuinely jumps — a gust, an operator command, walking into a
+sheltered biome — and ambience that jumped with it would sound broken. Same
+"ease toward a target, don't snap" idiom as `WindState`'s weather boost and
+`AmbientWindDrift`.
+
+**`canStartSilent()` must return true.** `SoundEngine` refuses to start an
+instance whose volume is 0 unless it says otherwise, and these always start
+silent — fading up from nothing is the entire point. Without it the loops would
+simply never begin.
+
+Other details that matter:
+- The instances are `relative` with `Attenuation.NONE` at the origin, so they sit
+  with the listener. Wind is everywhere around you, not a thing you walk toward.
+- `SoundSource.AMBIENT`, so vanilla's Ambient/Environment slider governs them,
+  with `windSoundVolume` on top.
+- The manager only writes `volume`; the engine re-reads `getVolume()` every tick
+  for a tickable instance, which is what makes a live crossfade work at all.
+- A layer is stopped once it's inaudible rather than left running silently, and
+  rebuilt when it's wanted again. If `SoundManager.isActive` says the engine
+  dropped it (a resource reload, a stolen channel), the reference is cleared and
+  a fresh loop starts next tick instead of going quiet forever.
+- Nothing happens while the game is paused: the engine pauses the loops itself,
+  and stopping them here would restart them on unpause.
+- `sounds.json` sets `stream: false`. These are short loops, and a streamed sound
+  can gap audibly at the wrap — exactly what you'd hear on continuous ambience.
+
 ## Command reference
 
 ```
@@ -1428,6 +1475,8 @@ but don't actively make future extension harder either:
   *spatial* variation, but still of the one drifting wind, not distinct systems
 - New blocks/items beyond the two wind vanes, the breeze maker and the wind
   bearing (anemometers, handheld wind meters, etc.)
+- More sound than the two ambience layers (gust one-shots, whistling through
+  blocks, per-biome variants)
 - Anything beyond wind simulation + its Create/Create Aeronautics
   interaction (windmill response, contraption force and the wind bearing are
   in scope; other Create kinetic generators are not)
@@ -1491,6 +1540,14 @@ anywhere in the source. Not confirmed yet: that the config auto-populates on
 first world load without re-entering its own save, that the biome table reaches
 clients on join, that borders actually read as gradual in game, and the real
 frame/tick cost under heavy rain.
+
+**M15 (wind sounds, see its section) is written and compile-verified, but not yet
+live-tested.** Verified statically: the sound instance and engine APIs against
+`neoforge-21.1.248-merged.jar`, including that `SoundEngine` really does consult
+`canStartSilent()`; the built jar carries both `.ogg` files, `sounds.json` and the
+three classes. Not confirmed yet: that the loops are seamless, that the two layers
+actually blend rather than beat against each other, and whether the default
+thresholds and fade rate feel right in game.
 
 ## External references
 

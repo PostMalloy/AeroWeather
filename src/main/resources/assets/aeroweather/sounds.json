@@ -1,0 +1,22 @@
+{
+  "wind1": {
+    "category": "ambient",
+    "subtitle": "subtitles.aeroweather.wind_light",
+    "sounds": [
+      {
+        "name": "aeroweather:ambient/wind1",
+        "stream": false
+      }
+    ]
+  },
+  "wind2": {
+    "category": "ambient",
+    "subtitle": "subtitles.aeroweather.wind_heavy",
+    "sounds": [
+      {
+        "name": "aeroweather:ambient/wind2",
+        "stream": false
+      }
+    ]
+  }
+}
