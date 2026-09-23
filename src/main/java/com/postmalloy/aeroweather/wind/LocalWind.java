@@ -66,6 +66,15 @@ public final class LocalWind {
         }
 
         SubLevelFrames.LocalFrame frame = SubLevelFrames.get().frameAt(level, pos);
+
+        // Where this block actually stands, which is not its BlockPos on a ship: a
+        // sub-level's blocks live at far-away plot coordinates whose biome means
+        // nothing. Sample the field where the ship is, not where its storage is.
+        Vec3 fieldPosition = frame == null ? Vec3.atCenterOf(pos) : frame.worldPosition();
+        WindField.Sample field = WindField.at(level, fieldPosition.x, fieldPosition.z);
+        directionDeg = WindDirection.normalizeDegrees(directionDeg + field.directionOffsetDeg());
+        baseStrength *= field.strengthFactor();
+
         if (frame == null) {
             return new Sample(directionDeg, heightScaled(level, baseStrength, pos.getY()));
         }

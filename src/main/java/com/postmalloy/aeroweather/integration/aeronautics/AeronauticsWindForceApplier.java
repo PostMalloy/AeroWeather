@@ -14,6 +14,7 @@ import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.payload.ClientboundActiveContraptionsPayload;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindField;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindSavedData;
 import com.postmalloy.aeroweather.wind.WindState;
@@ -295,7 +296,11 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         // one-off world-space Y read, purely to sample elevation-adjusted strength at its altitude.
         Pose3dc pose = subLevel.logicalPose();
         Vec3 comWorld = pose.transformPosition(new Vec3(centerOfMass.x(), centerOfMass.y(), centerOfMass.z()));
-        float adjustedStrength = WindHeightScaling.scale(wind.strength(), comWorld.y, level.getSeaLevel(),
+        // Per contraption, not per level: the hoisted `wind` above is the dimension's base
+        // value, and two airships far apart sit in different parts of the flow field.
+        WindField.Sample field = WindField.at(level, comWorld.x, comWorld.z);
+
+        float adjustedStrength = WindHeightScaling.scale(wind.strength() * field.strengthFactor(), comWorld.y, level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
@@ -303,7 +308,8 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             return;
         }
 
-        Vec3 worldWindDirection = WindDirection.travelVector(wind.directionDeg());
+        Vec3 worldWindDirection = WindDirection.travelVector(
+                WindDirection.normalizeDegrees(wind.directionDeg() + field.directionOffsetDeg()));
         Vec3 localDir = pose.transformNormalInverse(worldWindDirection);
         double localLength = localDir.length();
         if (localLength < 1.0E-6) {

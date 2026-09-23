@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.postmalloy.aeroweather.block.WindVaneBlockItem;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindField;
 
 import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.model.GeoModel;
@@ -92,7 +93,12 @@ public class WindVaneItemRenderer extends GeoItemRenderer<WindVaneBlockItem> {
         if (level == null || syncedDimension == null || !syncedDimension.equals(level.dimension().location())) {
             return null;
         }
-        Vec3 travel = WindDirection.travelVector(ClientWindState.directionDeg());
+        // Sampled at the camera, not the item: a held vane should agree with a placed one
+        // standing next to the player.
+        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        WindField.Sample field = WindField.at(level, camera.x, camera.z);
+        Vec3 travel = WindDirection.travelVector(
+                WindDirection.normalizeDegrees(ClientWindState.directionDeg() + field.directionOffsetDeg()));
         return new Vector3f((float) -travel.x, 0.0f, (float) -travel.z);
     }
 

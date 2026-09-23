@@ -8,6 +8,7 @@ import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindField;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 
 import net.minecraft.client.Minecraft;
@@ -94,7 +95,13 @@ public final class WindParticleSpawner {
             return;
         }
 
-        float strength = WindHeightScaling.scale(baseStrength, player.getY(), level.getSeaLevel(),
+        // One sample per tick at the player, shared by every particle spawned this tick -
+        // they all appear within a few blocks of each other, so the field barely differs.
+        WindField.Sample field = WindField.at(level, player.getX(), player.getZ());
+        float directionDeg = WindDirection.normalizeDegrees(
+                ClientWindState.directionDeg() + field.directionOffsetDeg());
+
+        float strength = WindHeightScaling.scale(baseStrength * field.strengthFactor(), player.getY(), level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
@@ -110,7 +117,7 @@ public final class WindParticleSpawner {
         spawnAccumulator += maxParticlesPerTick * (strength / 100.0F);
         while (spawnAccumulator >= 1.0F) {
             spawnAccumulator -= 1.0F;
-            spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_STREAK.get());
+            spawnOne(level, player, directionDeg, strength, AeroWeatherParticles.WIND_STREAK.get());
         }
 
         // WIND_LOOP mirrors WIND_STREAK's exact spawn-rate formula, but only half of its
@@ -119,7 +126,7 @@ public final class WindParticleSpawner {
         while (loopSpawnAccumulator >= 1.0F) {
             loopSpawnAccumulator -= 1.0F;
             if (level.random.nextBoolean()) {
-                spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_LOOP.get());
+                spawnOne(level, player, directionDeg, strength, AeroWeatherParticles.WIND_LOOP.get());
             }
         }
 
@@ -130,7 +137,7 @@ public final class WindParticleSpawner {
             gustSpawnAccumulator += 0.5F * maxParticlesPerTick * (strength / 100.0F);
             while (gustSpawnAccumulator >= 1.0F) {
                 gustSpawnAccumulator -= 1.0F;
-                spawnOne(level, player, ClientWindState.directionDeg(), strength, AeroWeatherParticles.WIND_GUST.get());
+                spawnOne(level, player, directionDeg, strength, AeroWeatherParticles.WIND_GUST.get());
             }
         } else {
             gustSpawnAccumulator = 0.0F;

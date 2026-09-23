@@ -33,7 +33,7 @@ public class WindDriftingCampfireSmokeParticle extends CampfireSmokeParticle {
 
     @Override
     public void tick() {
-        Vec3 target = AmbientWindDrift.targetVelocity(this.level, this.y);
+        Vec3 target = AmbientWindDrift.targetVelocity(this.level, this.x, this.y, this.z);
         if (target != null) {
             this.xd += (target.x - this.xd) * EASE_FACTOR;
             this.zd += (target.z - this.zd) * EASE_FACTOR;

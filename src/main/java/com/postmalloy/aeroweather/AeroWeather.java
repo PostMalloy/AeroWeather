@@ -12,11 +12,13 @@ import com.postmalloy.aeroweather.registry.AeroWeatherBlocks;
 import com.postmalloy.aeroweather.registry.AeroWeatherCommandArgumentTypes;
 import com.postmalloy.aeroweather.registry.AeroWeatherItems;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
+import com.postmalloy.aeroweather.wind.BiomeWindEvents;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.config.ModConfigEvent;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
 @Mod(AeroWeather.MODID)
@@ -31,6 +33,14 @@ public class AeroWeather {
     public AeroWeather(IEventBus modEventBus, ModContainer modContainer) {
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, AeroWeatherCommonConfig.SPEC);
+
+        // Biome wind factors are config-driven, so a reload has to rebuild them and drop
+        // everything cached from them. Added directly because ModConfigEvent is a mod-bus event.
+        modEventBus.addListener(ModConfigEvent.Reloading.class, event -> {
+            if (event.getConfig().getSpec() == AeroWeatherCommonConfig.SPEC) {
+                BiomeWindEvents.onConfigReloaded();
+            }
+        });
 
         // Register the custom /aeroweather command's Brigadier argument types
         AeroWeatherCommandArgumentTypes.COMMAND_ARGUMENT_TYPES.register(modEventBus);

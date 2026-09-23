@@ -10,7 +10,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
-/** Sends a full wind sync whenever a player needs fresh state: on join, dimension change, or respawn. */
+/** Sends full wind state whenever a player needs it: on join, dimension change, or respawn. */
 @EventBusSubscriber(modid = AeroWeather.MODID)
 public final class PlayerSyncListener {
     private PlayerSyncListener() {
@@ -35,6 +35,8 @@ public final class PlayerSyncListener {
         if (player instanceof ServerPlayer serverPlayer) {
             ServerLevel level = serverPlayer.serverLevel();
             WindSync.sendTo(serverPlayer, level, WindSavedData.get(level));
+            // The biome table rarely changes, but a joining client has none at all yet.
+            BiomeWindSync.sendTo(serverPlayer);
         }
     }
 }

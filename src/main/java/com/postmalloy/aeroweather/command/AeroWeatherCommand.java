@@ -8,6 +8,7 @@ import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.WindSync;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindField;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindOverride;
 import com.postmalloy.aeroweather.wind.WindSavedData;
@@ -17,6 +18,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -85,8 +87,12 @@ public final class AeroWeatherCommand {
 
         // getPosition() works for any command source (player, console, command block), not just players,
         // so this degrades gracefully rather than requiring the source to be a ServerPlayer.
-        double y = context.getSource().getPosition().y;
-        float adjustedStrength = WindHeightScaling.scale(wind.strength(), y, level.getSeaLevel(),
+        Vec3 position = context.getSource().getPosition();
+        // The local value: base wind bent and scaled by the flow map and the biome here. Neutral
+        // when per-biome wind is off, so the reported numbers then match the base exactly.
+        WindField.Sample field = WindField.at(level, position.x, position.z);
+        int localDirectionRounded = Math.round(WindDirection.normalizeDegrees(wind.directionDeg() + field.directionOffsetDeg()));
+        float adjustedStrength = WindHeightScaling.scale(wind.strength() * field.strengthFactor(), position.y, level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
@@ -94,7 +100,7 @@ public final class AeroWeatherCommand {
 
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.info",
                 nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, source,
-                adjustedStrengthRounded), false);
+                adjustedStrengthRounded, localDirectionRounded), false);
         return strengthRounded;
     }
 

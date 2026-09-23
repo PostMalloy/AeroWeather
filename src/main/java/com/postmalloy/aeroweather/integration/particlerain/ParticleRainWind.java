@@ -6,6 +6,7 @@ import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.wind.WindDirection;
+import com.postmalloy.aeroweather.wind.WindField;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
 
 import net.minecraft.client.Minecraft;
@@ -95,14 +96,29 @@ public final class ParticleRainWind {
             return null;
         }
 
-        float adjustedStrength = WindHeightScaling.scale(cachedBaseStrength, y, cachedSeaLevel,
-                cachedReferenceHeight, cachedExponent, cachedMaxMultiplier);
+        // The only part that varies per particle. Everything else above is cached for the
+        // whole tick; the field itself is cached per 16-block cell and never expires, so this
+        // is a few map lookups rather than a biome query.
+        WindField.Sample field = WindField.at(level, x, z);
+
+        float adjustedStrength = WindHeightScaling.scale(cachedBaseStrength * field.strengthFactor(), y,
+                cachedSeaLevel, cachedReferenceHeight, cachedExponent, cachedMaxMultiplier);
         // The floor keeps sandstorm dust blowing sideways even in dead calm - a sandstorm that
         // falls straight down like rain isn't a sandstorm. It's a floor on the wind vector, not
         // on any one particle's angle, because getWind is shared by every particle type and
         // isn't told which one is asking.
         double magnitude = Math.max(cachedMagnitudePerStrength * adjustedStrength, cachedMinimumMagnitude);
-        return new Vector3f((float) (cachedTravelX * magnitude), 0.0f, (float) (cachedTravelZ * magnitude));
+
+        // Rotate the cached travel vector by the field's direction offset rather than
+        // rebuilding it: a rotation is two multiplies per axis, travelVector is a pair of
+        // trig calls, and this runs per particle per tick.
+        double offsetRadians = Math.toRadians(field.directionOffsetDeg());
+        double cos = Math.cos(offsetRadians);
+        double sin = Math.sin(offsetRadians);
+        double travelX = cachedTravelX * cos - cachedTravelZ * sin;
+        double travelZ = cachedTravelX * sin + cachedTravelZ * cos;
+
+        return new Vector3f((float) (travelX * magnitude), 0.0f, (float) (travelZ * magnitude));
     }
 
     private static void refreshCache(ClientLevel level) {

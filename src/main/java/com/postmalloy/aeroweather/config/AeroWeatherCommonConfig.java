@@ -1,5 +1,7 @@
 package com.postmalloy.aeroweather.config;
 
+import java.util.List;
+
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
@@ -12,6 +14,14 @@ import net.neoforged.neoforge.common.ModConfigSpec;
  */
 public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec SPEC;
+
+    public static final ModConfigSpec.BooleanValue PER_BIOME_WIND_ENABLED;
+    public static final ModConfigSpec.DoubleValue BIOME_WIND_STRENGTH_INFLUENCE;
+    public static final ModConfigSpec.DoubleValue BIOME_WIND_BLEND_RADIUS_BLOCKS;
+    public static final ModConfigSpec.DoubleValue FLOW_MAP_MAX_DIRECTION_DEVIATION_DEGREES;
+    public static final ModConfigSpec.DoubleValue FLOW_MAP_SCALE_BLOCKS;
+    public static final ModConfigSpec.DoubleValue FLOW_MAP_STRENGTH_VARIATION;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> BIOME_WIND_FACTORS;
 
     public static final ModConfigSpec.DoubleValue DRIFT_MAX_DIRECTION_DELTA_DEG;
     public static final ModConfigSpec.DoubleValue DRIFT_MAX_STRENGTH_DELTA;
@@ -66,10 +76,10 @@ public final class AeroWeatherCommonConfig {
         builder.comment("Natural wind drift: how the base direction/strength wander over time.").push("drift");
         DRIFT_MAX_DIRECTION_DELTA_DEG = builder
                 .comment("Maximum degrees a newly rolled drift target may differ from the current direction.")
-                .defineInRange("maxDirectionDeltaDegrees", 60.0, 0.0, 180.0);
+                .defineInRange("maxDirectionDeltaDegrees", 20.0, 0.0, 180.0);
         DRIFT_MAX_STRENGTH_DELTA = builder
                 .comment("Maximum a newly rolled drift target may differ from the current strength (0-100 scale).")
-                .defineInRange("maxStrengthDelta", 30.0, 0.0, 100.0);
+                .defineInRange("maxStrengthDelta", 10.0, 0.0, 100.0);
         DRIFT_RETARGET_MIN_SECONDS = builder
                 .comment("Minimum seconds between drift target re-rolls.")
                 .defineInRange("retargetMinSeconds", 15, 1, 3600);
@@ -178,8 +188,8 @@ public final class AeroWeatherCommonConfig {
                 .comment("Whether wind affects Create windmill speed at all. When false, windmills behave exactly as vanilla Create.")
                 .define("windmillsEnabled", true);
         WINDMILL_FULL_SPEED_STRENGTH = builder
-                .comment("Elevation-adjusted wind strength at which a windmill spins at its normal (unmodified) Create speed. Defaults to the clear-weather strength cap.")
-                .defineInRange("windmillFullSpeedStrength", 50.0, 1.0, 100.0);
+                .comment("Elevation-adjusted wind strength at which a windmill spins at its normal (unmodified) Create speed. Defaults to half the clear-weather strength cap, so ordinary clear-day wind already drives a windmill somewhat above its normal speed.")
+                .defineInRange("windmillFullSpeedStrength", 25.0, 1.0, 100.0);
         WINDMILL_MAX_SPEED_MULTIPLIER = builder
                 .comment("Upper bound on the wind speed multiplier. Above 1.0, strong wind overspeeds windmills past their sail rating (1.5 is reached at adjusted strength 75, the rain cap).")
                 .defineInRange("windmillMaxSpeedMultiplier", 1.5, 0.0, 5.0);
@@ -197,7 +207,7 @@ public final class AeroWeatherCommonConfig {
                 "swing, so a brass vane's swing agrees with its signal."
         ).push("windVane");
         WIND_VANE_FULL_SIGNAL_STRENGTH = builder
-                .comment("Elevation-adjusted wind strength at which a brass wind vane outputs a full redstone signal of 15, scaling linearly down to 0 in calm air. Also the strength at which either vane swings toward the wind at full speed. Defaults to windmillFullSpeedStrength, so the wind that runs a windmill at full speed also maxes a vane.")
+                .comment("Elevation-adjusted wind strength at which a brass wind vane outputs a full redstone signal of 15, scaling linearly down to 0 in calm air. Also the strength at which either vane swings toward the wind at full speed. Defaults to the clear-weather strength cap, so a full signal means genuinely strong wind rather than an ordinary day.")
                 .defineInRange("windVaneFullSignalStrength", 50.0, 1.0, 300.0);
         builder.pop();
 
@@ -229,6 +239,42 @@ public final class AeroWeatherCommonConfig {
         WIND_BEARING_FACING_OFFSET_DEGREES = builder
                 .comment("Added to the wind's bearing before the contraption is turned to it. A contraption has no inherent front - angle 0 is however it was assembled - so build yours facing north and leave this at 0, or set it to whichever bearing its front faced when assembled (90 for east, and so on).")
                 .defineInRange("windBearingFacingOffsetDegrees", 0.0, -180.0, 180.0);
+        builder.pop();
+
+        builder.comment(
+                "Wind that varies from place to place instead of being one value per dimension.",
+                "Direction is bent by a smooth flow map; strength is scaled by the biome, blended",
+                "across borders so neighbouring biomes never jump."
+        ).push("biomeWind");
+        PER_BIOME_WIND_ENABLED = builder
+                .comment("Whether wind varies by position at all. Off falls back to one wind direction and strength for the whole dimension, exactly as the mod behaved before 1.5.0.")
+                .define("perBiomeWindEnabled", true);
+        BIOME_WIND_STRENGTH_INFLUENCE = builder
+                .comment("How strongly a biome's own factor counts. 1 applies it in full, 0.5 halves the difference from normal, 0 ignores biomes entirely and leaves only the flow map.")
+                .defineInRange("biomeWindStrengthInfluence", 1.0, 0.0, 1.0);
+        BIOME_WIND_BLEND_RADIUS_BLOCKS = builder
+                .comment("How far a biome's wind bleeds past its border. Larger values make the change more gradual and cost slightly more to compute; a border eases over roughly twice this distance.")
+                .defineInRange("biomeWindBlendRadiusBlocks", 48.0, 0.0, 256.0);
+        FLOW_MAP_MAX_DIRECTION_DEVIATION_DEGREES = builder
+                .comment("The furthest the flow map can bend wind away from the dimension's prevailing direction. 0 keeps direction uniform everywhere and leaves only biome strength variation.")
+                .defineInRange("flowMapMaxDirectionDeviationDegrees", 60.0, 0.0, 180.0);
+        FLOW_MAP_SCALE_BLOCKS = builder
+                .comment("Roughly how many blocks across one feature of the flow map is. Larger values give broad, slowly turning weather systems; smaller ones make wind change direction over shorter distances.")
+                .defineInRange("flowMapScaleBlocks", 768.0, 32.0, 8192.0);
+        FLOW_MAP_STRENGTH_VARIATION = builder
+                .comment("How much the flow map varies strength on top of the biome factor, as a fraction. 0.15 means plus or minus 15 percent, so wind isn't perfectly even within one biome.")
+                .defineInRange("flowMapStrengthVariation", 0.15, 0.0, 1.0);
+        BIOME_WIND_FACTORS = builder
+                .comment(
+                        "Per-biome wind strength multipliers, as 'namespace:biome=1.0' entries.",
+                        "Above 1 is windier than normal, below 1 is more sheltered.",
+                        "This list fills itself in: every biome the game has loaded, modded ones included, is",
+                        "added on world load with a starting value guessed from its tags, so you can edit it here.",
+                        "Delete an entry to have it guessed again."
+                )
+                .defineListAllowEmpty("biomeWindFactors", List.of(),
+                        () -> "minecraft:plains=1.15",
+                        entry -> entry instanceof String text && text.indexOf('=') > 0);
         builder.pop();
 
         SPEC = builder.build();

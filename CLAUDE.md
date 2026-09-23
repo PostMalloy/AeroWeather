@@ -87,6 +87,10 @@ wind/
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
   WindOverride.java                   pinned direction/strength value type (operator command, or breeze maker)
   WindHeightScaling.java              pure function: base strength -> elevation-scaled strength (power-law, 0 at/below sea level)
+  FlowNoise.java                      pure function: deterministic 2D value noise, the flow map that bends direction (see M14)
+  WindField.java                      per-position direction offset + strength factor; 2-layer cell cache, blur, bilinear
+  BiomeWindFactors.java               biome -> strength factor: config overrides, then tag rules, then a downfall fallback
+  BiomeWindEvents.java                rebuilds the table on server start / TagsUpdatedEvent, writes discovered biomes to config
 
 network/
   NetworkHandler.java                 RegisterPayloadHandlersEvent registration
@@ -96,6 +100,8 @@ network/
                                        AeronauticsWindForceApplier, not WindSync - see M7 design section)
   ClientPayloadHandler.java           updates client.ClientWindState / client.ClientActiveContraptions on receipt
   WindSync.java                       decides when to broadcast: force (join/dimension-change/respawn/command) vs threshold+heartbeat
+  BiomeWindSync.java                  sends the biome factor table + flow seed; once per join, not per tick
+  payload/ClientboundBiomeWindPayload.java   record CustomPacketPayload: flow seed + biome -> factor map
   PlayerSyncListener.java             PlayerLoggedInEvent/PlayerChangedDimensionEvent/PlayerRespawnEvent -> WindSync.sendTo(player)
 
 client/
@@ -237,7 +243,9 @@ speed is clamped to 0.
 
 - Per-`ServerLevel` state stored in `SavedData` (naturally per-dimension —
   `isRaining()` is always false in the Nether/End, so weather-boost is
-  always 0 there with no special-casing needed).
+  always 0 there with no special-casing needed). This is the **base** wind;
+  since M14 it is modulated per position by `WindField` before anything
+  consumes it. Everything in this section describes the base value.
 - Effective strength = `overridden ? overrideStrength : min(clamp(baseStrength
   + gustStrength + weatherBoost, 0, 100), currentStrengthCap())`.
 - Natural drift: periodically re-roll a target direction/strength within
@@ -664,8 +672,10 @@ re-evaluating every 20 ticks, and `setBlock(UPDATE_ALL)` only on change —
 so observers pulse whenever the reading changes.
 
 - `power = clamp(round(adjustedStrength / windVaneFullSignalStrength * 15), 0, 15)`.
-  The config default is 50, matching `windmillFullSpeedStrength`, so the
-  wind that runs a windmill at full speed also maxes a vane.
+  The config default is 50, the clear-weather strength cap, so a full signal
+  means genuinely strong wind. It is deliberately **not** tied to
+  `windmillFullSpeedStrength` (25): a windmill should reach its rated speed on
+  an ordinary day, a vane should still have headroom left.
 - `WIND_FROM = WindDirection.nearest(bearing)` (±22.5° sectors). A face
   emits iff `angularDifference(windFrom, faceBearing) <= 45`, which is one
   face for a cardinal wind and two for a diagonal. `WIND_FROM` is held while
@@ -1132,6 +1142,165 @@ keys omit `powered`, which a variant key may leave out to match every value.
 The recipe (a zinc wind vane over a swivel bearing over a brass casing) carries
 `neoforge:conditions` for all three mods.
 
+## M14: Per-biome wind
+
+Wind varies across the world instead of being one value per dimension: bent by a
+smooth flow map, and scaled by the biome underneath — open ground blows harder
+than forest. `perBiomeWindEnabled` (default **true**) falls back to the old
+uniform behaviour.
+
+```
+direction = baseDirection + field.directionOffsetDeg()
+strength  = baseStrength  * field.strengthFactor()
+```
+
+The base pair is exactly what it always was (`WindState` on the server,
+`ClientWindState` on the client, synced by the unchanged
+`ClientboundWindSyncPayload`). `WindField.at(level, x, z)` supplies the rest and
+returns `NEUTRAL` when the feature is off, so the fallback is a genuine no-op.
+
+### Why it's affordable: the field never changes
+
+`WindField` depends only on position, biomes and config — **never on the wind
+state**, which is the thing that updates every second. So cells are computed once
+and kept for the session, and the 1 Hz wind tick costs nothing extra. That is the
+whole performance design; everything below follows from it.
+
+Biome strength is cached in two layers on a 16-block, chunk-aligned grid:
+- **raw** — one biome lookup at a cell centre, mapped through the factor table;
+- **blurred** — the mean of raw over a `(2r+1)²` neighbourhood, `r` from
+  `biomeWindBlendRadiusBlocks`.
+
+Sampling bilinearly interpolates *blurred* across the four surrounding cell
+centres. Blur plus interpolation is what stops a forest/plains border being a
+step — it eases over roughly twice the blend radius. Raw cells are shared between
+neighbouring blurs, so filling amortises to about one biome lookup per cell.
+A blur built while any neighbour was unloaded is **not cached**, or an
+edge-of-world artefact would freeze in for the session.
+
+Measured cost of one warm sample: four `Long2FloatOpenHashMap` lookups, a
+bilinear lerp and one or two noise evaluations — no allocation. At the worst
+realistic load (heavy rain, ~3000 Particle Rain particles at 20 Hz) that is
+roughly 6 ms/s, well under 1% of a core. The knobs if it ever bites are cell size
+and blur radius.
+
+### The chunk-safety trap
+
+Biome reads go through `level.getChunkSource().getChunkNow(cx, cz)` and then
+`chunk.getNoiseBiome(QuartPos.fromBlock(...))` — **never `level.getBiome(pos)`**.
+Two reasons, both verified in the 1.21.1 sources:
+- `ServerChunkCache.getChunk(.., BIOMES, false)` only short-circuits when no
+  `ChunkHolder` exists. For the generation border ring around loaded chunks a
+  holder *does* exist, and the call then runs `scheduleChunkGenerationTask` +
+  `managedBlock` — **synchronous worldgen on the main thread**. At this call rate
+  that would be catastrophic.
+- `ServerLevel.getUncachedNoiseBiome` runs the multi-noise climate sampler, and
+  `ClientLevel.getUncachedNoiseBiome` silently answers `minecraft:plains`.
+
+`getChunkNow` generates nothing: the base `ChunkSource` implementation routes to
+`getChunk(x, z, FULL, false)`, which client-side is a plain array index into the
+view-distance ring, and `ServerChunkCache` overrides it with a non-generating
+lookup that returns null off the main thread. A miss yields a neutral factor and
+**isn't cached**, so the cell fills in properly once the chunk loads.
+
+Biomes are sampled at a fixed height (sea level + 16), not the caller's Y. That
+keeps the cache 2D and stops cave biomes from deciding surface wind; altitude is
+already `WindHeightScaling`'s job.
+
+### Two caches, split by side
+
+`CLIENT_CACHES` and `SERVER_CACHES` are separate maps, both keyed by dimension.
+In single player the client level and the server level **share a dimension key**
+but run on different threads, so one map would hand both the same `Cells` — and
+the owner-thread check would then quietly give one side neutral wind, producing
+exactly the client/server disagreement the synced table exists to prevent.
+
+Each `Cells` belongs to the thread that created it. Anything else (a Sable
+physics worker, say) computes uncached rather than risking a torn
+`Long2FloatOpenHashMap`. Locking would show up at thousands of calls per tick;
+losing the cache on a rare off-thread call does not.
+
+### Direction: the flow map, not per biome
+
+`FlowNoise` is two octaves of seeded value noise, a pure function like
+`WindHeightScaling`. Deliberately **not** vanilla's noise classes: both sides
+evaluate it independently, so it must be bit-identical, and a self-contained
+function is easier to guarantee that for than MC internals tied to
+`RandomSource`. Plain `double` arithmetic is exactly reproducible (Java 17+ is
+always strict).
+
+Direction is noise-driven rather than per-biome so that the same biome in two
+places can have different wind, and because a continuous field **cannot** step at
+a border by construction. Verified by running it standalone: deterministic,
+inside [-1, 1], and at default settings the largest change between adjacent
+blocks is **0.105°**.
+
+A second, one-octave layer varies strength a little within a biome
+(`flowMapStrengthVariation`).
+
+### Biome factors
+
+`BiomeWindFactors` resolves each biome in three steps: an explicit config entry,
+then the first matching tag rule, then a downfall-derived fallback
+(`getModifiedClimateSettings().downfall()` — NeoForge's accessor, since
+`climateSettings` is private and there is no public `getDownfall()`).
+
+Tag rules check **NeoForge's `Tags.Biomes` first**, then vanilla `BiomeTags`.
+Vanilla's set is too thin to classify on — it has no `IS_PLAINS`, `IS_DESERT` or
+`IS_SWAMP` at all — while NeoForge's is rich and is what modded biomes populate.
+Order within the rules matters: a windswept forest matches forest first, because
+its trees are what block the wind.
+
+**Mountains sit near neutral on purpose.** They are rough ground, but they are
+also tall, and `WindHeightScaling` already multiplies wind by altitude. Giving
+them a high factor as well would double-count and make peaks absurd.
+
+The table is rebuilt on `TagsUpdatedEvent` — not `ServerAboutToStartEvent` —
+because `Holder.is(TagKey)` is meaningless until tags are bound, and `/reload`
+can change them. Readers never synchronise: the map is immutable and swapped
+wholesale.
+
+### Config auto-population
+
+`biomeWindFactors` is a string list of `namespace:biome=1.15` entries.
+`BiomeWindEvents` appends every registered biome missing from it, sorted, then
+`set()` + `SPEC.save()`. Two things to know:
+- `SPEC.save()` fires `ModConfigEvent.Reloading` **synchronously**, and that
+  listener rebuilds the table — hence the `writingConfig` re-entrancy guard.
+- Sorted output means the list stops changing after the first write, so the
+  equality check actually prevents rewriting every load.
+
+### Why the table is synced
+
+`ClientboundBiomeWindPayload` carries the factor table and the flow seed, sent on
+join alongside the wind sync and re-broadcast on tag/config reload. Both sides
+compute per-position wind independently, so the client needs the *server's*
+numbers or windmill visuals and weather particles would disagree with the
+kinetics the server simulates — a worse version of the divergence M9's
+quantization papers over. Deriving from a common config on each side would break
+the moment an admin edited the server's copy.
+
+The seed is synced because the client cannot derive it: the world seed isn't sent
+to clients, and `BiomeManager`'s synced zoom seed has no accessor. Until the
+payload arrives the client returns `NEUTRAL` rather than bending wind with a zero
+seed.
+
+### Every consumer
+
+`LocalWind.at` applies the field, so the vane, the wind bearing and Create
+windmills get per-position wind for free. **On a Sable ship the field is sampled
+at the ship's world position, not the block's `BlockPos`** — sub-level blocks
+live at far-away plot coordinates whose biome means nothing. The readers that
+bypass `LocalWind` were each routed through it too: `WindParticleSpawner` (one
+sample per tick at the player, shared by that tick's particles),
+`AmbientWindDrift` (per particle, at its own XZ), `ParticleRainWind` (per
+particle; the per-tick cache is kept for everything non-positional, and the
+cached travel vector is *rotated* by the offset rather than rebuilt, since
+`travelVector` is two trig calls), `AeronauticsWindForceApplier` (per contraption
+— the level-wide hoist no longer covers direction), `WindVaneItemRenderer`
+(sampled at the camera so a held vane agrees with a placed one) and
+`/aeroweather wind info`, which now reports the local value as well as the base.
+
 ## Command reference
 
 ```
@@ -1230,7 +1399,8 @@ Aeronautics, and Sable are absent — they're optional dependencies.
 Not building yet, don't add speculative abstractions for these — YAGNI,
 but don't actively make future extension harder either:
 
-- New weather pattern types (tornadoes, custom storms, etc.)
+- New weather pattern types (tornadoes, custom storms, etc.) — note M14 added
+  *spatial* variation, but still of the one drifting wind, not distinct systems
 - New blocks/items beyond the two wind vanes, the breeze maker and the wind
   bearing (anemometers, handheld wind meters, etc.)
 - Anything beyond wind simulation + its Create/Create Aeronautics
@@ -1286,6 +1456,16 @@ downward-facing bearings (each took one fix — see that section). Not confirmed
 that the bearing keeps treating our plate as its plate across save/reload, that
 breaking the plate breaks the bearing, that no cogwheel can connect to any side,
 stress pass-through base to contraption, and the whole thing on a moving ship.
+
+**M14 (per-biome wind, see its section) is written and compile-verified, but not
+yet live-tested.** Verified statically: every biome, registry, config and codec
+API used, against `neoforge-21.1.248-merged.jar` and `loader-4.0.43.jar`;
+`FlowNoise` compiled and run standalone for determinism, range and continuity
+(0.105° per block at defaults); no `getBiome`/`getUncachedNoiseBiome` call
+anywhere in the source. Not confirmed yet: that the config auto-populates on
+first world load without re-entering its own save, that the biome table reaches
+clients on join, that borders actually read as gradual in game, and the real
+frame/tick cost under heavy rain.
 
 ## External references
 
