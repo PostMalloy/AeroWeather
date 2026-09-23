@@ -197,6 +197,12 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
 
         int totalSolidBlocks = 0;
         int liftBlocks = 0;
+        // Accumulated in the loop that already visits every block, so the centre of
+        // pressure costs two adds per lift block, once per sub-level, and nothing at all
+        // per physics substep.
+        double liftSumX = 0.0;
+        double liftSumY = 0.0;
+        double liftSumZ = 0.0;
         for (int x = bounds.minX(); x <= bounds.maxX(); x++) {
             for (int y = bounds.minY(); y <= bounds.maxY(); y++) {
                 for (int z = bounds.minZ(); z <= bounds.maxZ(); z++) {
@@ -209,6 +215,9 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
                             || state.is(AeroWeatherBlockTags.LEVITITE)
                             || state.is(AeroWeatherBlockTags.WINDMILL_SAILS)) {
                         liftBlocks++;
+                        liftSumX += x + 0.5;
+                        liftSumY += y + 0.5;
+                        liftSumZ += z + 0.5;
                     }
                 }
             }
@@ -218,7 +227,10 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         double halfExtentX = (bounds.maxX() - bounds.minX() + 1) / 2.0;
         double halfExtentY = (bounds.maxY() - bounds.minY() + 1) / 2.0;
         double halfExtentZ = (bounds.maxZ() - bounds.minZ() + 1) / 2.0;
-        return new LiftProfile(liftRatio, halfExtentX, halfExtentY, halfExtentZ);
+        Vector3d centreOfPressure = liftBlocks == 0
+                ? new Vector3d()
+                : new Vector3d(liftSumX / liftBlocks, liftSumY / liftBlocks, liftSumZ / liftBlocks);
+        return new LiftProfile(liftRatio, halfExtentX, halfExtentY, halfExtentZ, centreOfPressure);
     }
 
     /** Fires every physics substep; forces aren't persistent in Sable so they're re-queued fresh each time. */
@@ -283,19 +295,31 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
             return;
         }
 
+        // Not the application point any more (see below), but still the cheapest way to tell
+        // whether this sub-level's mass tracker has actually been built yet.
         MassData mass = subLevel.getMassTracker();
         Vector3dc centerOfMass = mass == null ? null : mass.getCenterOfMass();
         if (mass == null || mass.getMass() <= 0.0 || centerOfMass == null) {
             return;
         }
 
-        // Center of mass and the force/point passed to applyAndRecordPointForce are both in the
-        // sub-level's LOCAL frame (confirmed by decompiling FloatingBlockController's own gravity/
-        // lift force calls, which never transform to world space before recording). Only the wind
-        // DIRECTION needs rotating from world into local space, and only the center of mass needs a
-        // one-off world-space Y read, purely to sample elevation-adjusted strength at its altitude.
+        // The force/point passed to applyAndRecordPointForce are both in the sub-level's LOCAL
+        // frame (confirmed by decompiling FloatingBlockController's own gravity/lift force calls,
+        // which never transform to world space before recording). Only the wind DIRECTION needs
+        // rotating from world into local space, and only the application point needs a one-off
+        // world-space read, to sample wind where the force actually acts.
+        //
+        // Applied at the centre of pressure, NOT the centre of mass. Aerodynamic force acts at the
+        // centroid of the area it pushes on; gravity is the force that acts at the centre of mass.
+        // A point force at the CoM has a moment arm of exactly zero, so it could never rotate a
+        // contraption - no weathervaning, no leaning into a crosswind - however it was tuned. The
+        // offset between the two is the whole source of aerodynamic torque, and Sable's own drag
+        // already produces an opposing torque per cluster, so the rotation it introduces is damped
+        // rather than unbounded.
+        Vector3d applicationPoint = profile.centreOfPressure();
         Pose3dc pose = subLevel.logicalPose();
-        Vec3 comWorld = pose.transformPosition(new Vec3(centerOfMass.x(), centerOfMass.y(), centerOfMass.z()));
+        Vec3 comWorld = pose.transformPosition(
+                new Vec3(applicationPoint.x(), applicationPoint.y(), applicationPoint.z()));
         // Per contraption, not per level: the hoisted `wind` above is the dimension's base
         // value, and two airships far apart sit in different parts of the flow field.
         WindField.Sample field = WindField.at(level, comWorld.x, comWorld.z);
@@ -334,7 +358,7 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
 
         Vector3d force = new Vector3d(localWindDirection).mul(magnitude);
         QueuedForceGroup queued = subLevel.getOrCreateQueuedForceGroup(WIND_FORCE_GROUP);
-        queued.applyAndRecordPointForce(new Vector3d(centerOfMass), force);
+        queued.applyAndRecordPointForce(new Vector3d(applicationPoint), force);
         if (activePositions != null) {
             activePositions.add(comWorld);
         }
@@ -354,6 +378,16 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
         return 1.0 + amplitude * Math.sin(2.0 * Math.PI * phase);
     }
 
-    private record LiftProfile(double liftRatio, double halfExtentX, double halfExtentY, double halfExtentZ) {
+    /**
+     * Cached once per sub-level. {@code centreOfPressure} is the centroid of the
+     * wind-catching blocks, in the same plot block coordinates as
+     * {@link MassData#getCenterOfMass()} - confirmed by decompiling
+     * {@code MassTracker.build}, which walks the very same
+     * {@code getPlot().getBoundingBox()} this scan does, in raw block coordinates.
+     * Zero when there are no such blocks, in which case {@code liftRatio} is 0 and
+     * no force is ever applied.
+     */
+    private record LiftProfile(double liftRatio, double halfExtentX, double halfExtentY, double halfExtentZ,
+            Vector3d centreOfPressure) {
     }
 }

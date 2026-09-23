@@ -353,7 +353,32 @@ Force formula and where each input comes from:
 | Lift ratio | `(lift-tagged blocks) / (total non-air blocks)`, one-time scan over the sub-level's local plot bounds | Cached once, **never refreshed** on later block edits (mirrors Sable's own `buildMassTracker()`) — but computed **lazily on first force application, not eagerly in `onSubLevelAdded`**: that notification fires before a contraption's blocks are actually copied into the sub-level's storage (an eager scan there permanently caches an empty snapshot — confirmed live). By the time a sub-level reaches `applyWindForce` it's genuinely running physics ticks, so its blocks are populated. `onSubLevelAdded` isn't overridden at all; only `onSubLevelRemoved` is, to evict the cache entry |
 | Wind strength | `WindSavedData.get(level).wind().strength()` → `WindHeightScaling.scale(...)` sampled at the contraption's own center-of-mass world Y | Wind state updates ~1Hz; height-scaled value and force recomputed every physics tick |
 | Force direction | `WindDirection.travelVector(bearingDeg)`, rotated into the sub-level's local frame via `Pose3dc.transformNormalInverse(...)` | Recomputed every physics tick |
-| Application point | The sub-level's local-space center of mass, used as-is (not transformed to world space — see "External references") | Read fresh every tick |
+| Application point | The **centre of pressure**: the centroid of the wind-catching blocks, in local space, used as-is (not transformed to world space — see "External references"). Accumulated in the same one-time block scan as the lift ratio | Cached with the lift profile |
+
+**Applied at the centre of pressure, not the centre of mass.** Aerodynamic force
+acts at the centroid of the area it pushes on; the centre of mass is where
+*gravity* acts. A point force at the CoM has a moment arm of exactly zero, so it
+can never rotate a contraption — no weathervaning, no leaning into a crosswind —
+whatever the magnitude. The CoP−CoM offset is the entire source of aerodynamic
+torque. We use the centroid of the wind-catching blocks specifically (rather than
+of all blocks) because the magnitude is already scaled by `liftRatio`: the force
+conceptually acts on the sails and envelope, which on a balloon sit well above the
+basket's mass. Sable's own drag produces an opposing torque per cluster, so the
+rotation this introduces is damped rather than unbounded.
+
+The coordinate frame is safe to share: `MassTracker.build` walks the very same
+`getPlot().getBoundingBox()` in raw block coordinates that our lift scan does, so
+a centroid from that scan is directly comparable to `getCenterOfMass()`.
+
+Sable's own drag is applied **per floating-block cluster**, each at that cluster's
+scale-weighted centroid (`FloatingBlockController.getTrueWeightedClusterPosition`),
+using the local velocity at that point including the angular contribution, and it
+yields both a force and a torque. Reusing those points for wind was considered and
+rejected: `containers` and `getTrueWeightedClusterPosition` are both private (two
+mixins into non-API internals), the clusters only cover *buoyant* blocks so a
+sail-only contraption has none at all, and walking them every substep would cost
+strictly more than reading one centroid cached once. A single point at the area
+centroid gives the same net force, and for a uniform wind the same net torque.
 
 `magnitude = pressureCoefficient * sectionalArea * strength² * liftRatio
 * oscillation`, clamped to `AERONAUTICS_MAX_FORCE` — a single scalar
