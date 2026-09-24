@@ -298,7 +298,7 @@ speed is clamped to 0.
 - Elevation scaling (`wind/WindHeightScaling.java`, a standalone pure
   function): approximates the real-world wind profile power law — 0 at
   or below sea level, reaching base strength at a configurable reference
-  height (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 100 blocks), capped
+  height (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.4), capped
   at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 3x).
   Kept standalone (not baked into `WindState`) since `WindParticleSpawner`
   (client, player's Y), `AeronauticsWindForceApplier` (server, a

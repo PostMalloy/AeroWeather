@@ -78,7 +78,7 @@ public final class AeroWeatherCommonConfig {
                 .defineInRange("maxDirectionDeltaDegrees", 20.0, 0.0, 180.0);
         DRIFT_MAX_STRENGTH_DELTA = builder
                 .comment("Maximum a newly rolled drift target may differ from the current strength (0-100 scale).")
-                .defineInRange("maxStrengthDelta", 10.0, 0.0, 100.0);
+                .defineInRange("maxStrengthDelta", 15.0, 0.0, 100.0);
         DRIFT_RETARGET_MIN_SECONDS = builder
                 .comment("Minimum seconds between drift target re-rolls.")
                 .defineInRange("retargetMinSeconds", 15, 1, 3600);
@@ -147,10 +147,10 @@ public final class AeroWeatherCommonConfig {
         ).push("height");
         HEIGHT_REFERENCE_ABOVE_SEA_LEVEL = builder
                 .comment("Blocks above sea level where the height multiplier reaches 1.0 (unmodified base strength).")
-                .defineInRange("referenceAboveSeaLevel", 100.0, 1.0, 4064.0);
+                .defineInRange("referenceAboveSeaLevel", 25.0, 1.0, 4064.0);
         HEIGHT_EXPONENT = builder
                 .comment("Power-law exponent controlling how quickly the multiplier ramps up with height.")
-                .defineInRange("exponent", 0.3, 0.0, 5.0);
+                .defineInRange("exponent", 0.4, 0.0, 5.0);
         HEIGHT_MAX_MULTIPLIER = builder
                 .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
                 .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
