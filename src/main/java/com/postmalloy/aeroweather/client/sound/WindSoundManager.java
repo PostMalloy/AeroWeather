@@ -30,7 +30,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * overlap across the top half of the range.
  * <p>
  * Volume eases toward its target by a fixed fraction per tick, the same "ease
- * toward a target, don't snap" idiom {@code WindState} uses for weather boost
+ * toward a target, don't snap" idiom {@code WindState} uses to ease its weather band
  * and {@code AmbientWindDrift} for particles. Wind strength can jump — a gust,
  * a command, walking into a sheltered biome — and the sound should not.
  */

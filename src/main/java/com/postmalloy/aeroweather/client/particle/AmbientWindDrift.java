@@ -20,7 +20,7 @@ import net.neoforged.api.distmarker.OnlyIn;
  * utility class has no subclass relationship to {@code Particle}, so it can't touch its
  * protected {@code xd}/{@code zd} fields directly - each particle class applies the returned
  * target itself via its own "ease toward a target, don't snap" step each tick, the same idiom
- * {@code WindState} already uses for {@code weatherBoost}. Strength is elevation-adjusted at
+ * {@code WindState} already uses to ease its weather band. Strength is elevation-adjusted at
  * the particle's own (live, not spawn-cached) Y, matching how {@code AeronauticsWindForceApplier}
  * samples wind at a contraption's own position rather than the player's.
  */

@@ -15,9 +15,7 @@
   "aeroweather.configuration.durationSeconds": "Duration (sec)",
 
   "aeroweather.configuration.weather": "Weather Settings",
-  "aeroweather.configuration.rainBoost": "Boost (rain)",
-  "aeroweather.configuration.thunderBoost": "Boost (Thunder)",
-  "aeroweather.configuration.easeFactor": "Ease Factor",
+  "aeroweather.configuration.easeFactor": "Weather Transition Rate",
   "aeroweather.configuration.strengthCapClear": "Strength Cap (clear)",
   "aeroweather.configuration.strengthCapRain": "Strength Cap (rain)",
   "aeroweather.configuration.strengthCapThunder": "Strength Cap (thunder)",

@@ -72,7 +72,7 @@ item/
                                        timed wind override (a breeze) blowing the way the player faces (see M11)
 
 config/
-  AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, rain/thunder boost, sync thresholds,
+  AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, per-weather strength bands, sync thresholds,
                                        aeronautics force, windmill, wind vane and breeze maker tuning
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption
                                        gating, Particle Rain angles, wind sound layers
@@ -83,9 +83,10 @@ wind/
   LocalWind.java                      wind as seen from one block's own grid, both sides, Sable-ship aware; shared
                                        by the wind vane and Create windmills (see M10)
   WindmillWindResponse.java           pure function: (facing, wind, strength) -> quantized Create windmill speed multiplier
-  WindState.java                      direction/strength + drift target + gust + weather-boost + override (timed or not); NBT I/O
+  WindState.java                      direction + normalized strength walk within a per-weather band + gust + override
+                                       (timed or not); NBT I/O
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
-  WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather-boost/override
+  WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather band/override
   WindOverride.java                   pinned direction/strength value type (operator command, or breeze maker)
   WindHeightScaling.java              pure function: base strength -> elevation-scaled strength (power-law, 0 at/below sea level)
   FlowNoise.java                      pure function: deterministic 2D value noise, the flow map that bends direction (see M14)
@@ -255,14 +256,34 @@ speed is clamped to 0.
 ## Wind system design
 
 - Per-`ServerLevel` state stored in `SavedData` (naturally per-dimension —
-  `isRaining()` is always false in the Nether/End, so weather-boost is
-  always 0 there with no special-casing needed). This is the **base** wind;
+  `isRaining()` is always false in the Nether/End, so those always use the
+  clear-weather band with no special-casing needed). This is the **base** wind;
   since M14 it is modulated per position by `WindField` before anything
   consumes it. Everything in this section describes the base value.
-- Effective strength = `overridden ? overrideStrength : min(clamp(baseStrength
-  + gustStrength + weatherBoost, 0, 100), currentStrengthCap())`.
-- Natural drift: periodically re-roll a target direction/strength within
-  a bounded delta, lerp current value toward it each simulation step.
+- Effective strength = `overridden ? overrideStrength : min(clamp(driftPosition
+  × bandCap + gustStrength, 0, 100), bandCap)`.
+- **Strength drifts within a band set by the weather**: 0–50 clear, 0–75
+  rain, 0–100 thunder (`STRENGTH_CAP_CLEAR`/`_RAIN`/`_THUNDER`). The walk
+  moves on a normalized `driftPosition` in [0, 1], and strength is that times
+  `bandCap`, which eases toward the weather's cap at `WEATHER_EASE_FACTOR`. So
+  rain widens the whole band under the walk rather than the walk having to
+  explore upward, and every weather has the same statistics: an even spread
+  over its band, averaging half its cap (25 / 37.5 / 50).
+- Each retarget steps `driftPosition` by `±maxStrengthDelta / bandCap`, so
+  strength still moves at most `maxStrengthDelta` per retarget in any
+  weather, and **reflects** off 0 and 1 rather than clamping. Clamping parks
+  overshoot exactly on the edge, piling up time at 0 and at the cap.
+- **It starts at a random point in the band, never at 0.** The old walk
+  started every world at strength 0, and with `maxStrengthDelta` at 10 it took
+  20–30 minutes to climb out — five minutes into a fresh world, 55% of worlds
+  were still below 10 (simulated), which is what made wind look like it tended
+  to zero in testing. Saves from before the band (no `DriftPosition` in NBT)
+  are re-seeded once rather than keeping their old strength, since those were
+  exactly the worlds stuck low; the walk eases from there, so nothing jumps.
+  Simulated after the change: a mean of 24.7 one minute into a fresh world
+  (was 4.0), and every tenth of each band gets ~10% of the time.
+- Direction drifts the old way: periodically re-roll a target within
+  `maxDirectionDeltaDegrees`, lerp toward it each simulation step.
 - Gusts: short probabilistic additive spikes that decay, layered on top
   of the drift value.
 - Elevation scaling (`wind/WindHeightScaling.java`, a standalone pure
@@ -278,20 +299,14 @@ speed is clamped to 0.
   ambient per-dimension value. Curve
   parameters live in the *common* config (not client) since the server-side
   `/aeroweather wind info` command and the aeronautics force both need them.
-- `weatherBoost` eases (doesn't snap) toward 0/rain-boost/thunder-boost
-  based on `level.isRaining()`/`isThundering()`, so weather starting/
-  stopping never jump-cuts wind.
-- Natural (non-overridden) strength is capped per weather tier via
-  `currentStrengthCap()`: `STRENGTH_CAP_CLEAR`/`_RAIN`/`_THUNDER`
-  (defaults 50/75/100) — a maximum, not a fixed value. The drift
-  *target* itself is bounded by the same cap in `tickDrift`, not just
-  the final sum: capping only the final sum let `baseStrength`'s random
-  walk wander above the cap (only clamped to [0,100]) and then sit
-  pinned there until it happened to drift back down, which read as
-  "stuck at a constant" rather than "capped but still varying." This is
-  separate from and upstream of `WindHeightScaling`'s elevation
-  adjustment, which can still push the elevation-adjusted value above
-  the tier cap. Overridden strength ignores the cap entirely.
+- **There is no additive rain/thunder boost any more** (the `rainBoost` and
+  `thunderBoost` settings are gone). It set a floor — rain could never drop
+  below its boost — which contradicts a 0–75 band; widening the band does its
+  job instead. The final sum is capped by the *eased* `bandCap`, not the
+  weather's cap directly: when rain stops the cap drops at once, and capping
+  by it would cut the wind off in a single step. This is separate from and
+  upstream of `WindHeightScaling`, which can still push the elevation-adjusted
+  value above the band. Overridden strength ignores the band entirely.
 - Command override pins an absolute direction/strength and **freezes**
   natural drift while active; `reset` resumes drift from wherever it was.
 - The breeze maker applies a **timed** override (`WindState.applyTimedOverride`),
@@ -333,8 +348,8 @@ setup inside the particle subclass's own constructor instead).
 Each subclass overrides `tick()` to ease `xd`/`zd` a small fixed
 fraction (`EASE_FACTOR = 0.02`) toward a wind-driven target velocity
 each tick, then calls `super.tick()` unchanged — the same "ease toward
-a target, don't snap" idiom `WindState` already uses for
-`weatherBoost`, chosen specifically to avoid unbounded runaway drift
+a target, don't snap" idiom `WindState` already uses to ease its
+weather band, chosen specifically to avoid unbounded runaway drift
 (a per-tick *additive* delta, mirroring how vanilla's own campfire-smoke
 jitter or cherry-leaf curl accumulate, would grow without bound over a
 non-zero-mean push since those particles live 80–330 ticks). The target
@@ -1357,7 +1372,7 @@ Volume eases toward its target by a fraction per tick (`windSoundFadeRate`,
 default 0.02, a couple of seconds to settle) rather than tracking it directly.
 Wind strength genuinely jumps — a gust, an operator command, walking into a
 sheltered biome — and ambience that jumped with it would sound broken. Same
-"ease toward a target, don't snap" idiom as `WindState`'s weather boost and
+"ease toward a target, don't snap" idiom as `WindState`'s weather band and
 `AmbientWindDrift`.
 
 **`canStartSilent()` must return true.** `SoundEngine` refuses to start an

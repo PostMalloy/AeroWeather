@@ -34,8 +34,6 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue GUST_MAX_MAGNITUDE;
     public static final ModConfigSpec.IntValue GUST_DURATION_SECONDS;
 
-    public static final ModConfigSpec.DoubleValue RAIN_BOOST;
-    public static final ModConfigSpec.DoubleValue THUNDER_BOOST;
     public static final ModConfigSpec.DoubleValue WEATHER_EASE_FACTOR;
     public static final ModConfigSpec.DoubleValue STRENGTH_CAP_CLEAR;
     public static final ModConfigSpec.DoubleValue STRENGTH_CAP_RAIN;
@@ -106,24 +104,21 @@ public final class AeroWeatherCommonConfig {
                 .defineInRange("durationSeconds", 4, 1, 600);
         builder.pop();
 
-        builder.comment("How rain and thunderstorms boost wind strength.").push("weather");
-        RAIN_BOOST = builder
-                .comment("Additive strength boost while it's raining (and not thundering).")
-                .defineInRange("rainBoost", 15.0, 0.0, 100.0);
-        THUNDER_BOOST = builder
-                .comment("Additive strength boost while thundering.")
-                .defineInRange("thunderBoost", 35.0, 0.0, 100.0);
+        builder.comment(
+                "How weather sets the range wind wanders in. Natural wind drifts evenly between 0 and",
+                "the current weather's cap, so each weather averages half its cap: 25, 37.5 and 50 by default."
+        ).push("weather");
         WEATHER_EASE_FACTOR = builder
-                .comment("Fraction of the remaining distance to the target weather boost covered each simulation step (higher = faster response to weather changes).")
+                .comment("How quickly the range widens or narrows when the weather changes, as a fraction of the remaining difference per second. Higher responds faster; lower eases in more gently.")
                 .defineInRange("easeFactor", 0.1, 0.001, 1.0);
         STRENGTH_CAP_CLEAR = builder
-                .comment("Maximum non-height-adjusted wind strength while it's neither raining nor thundering.")
+                .comment("Top of the range natural wind wanders in while it's neither raining nor thundering, before height scaling.")
                 .defineInRange("strengthCapClear", 50.0, 0.0, 100.0);
         STRENGTH_CAP_RAIN = builder
-                .comment("Maximum non-height-adjusted wind strength while raining (and not thundering).")
+                .comment("Top of the range natural wind wanders in while raining (and not thundering), before height scaling.")
                 .defineInRange("strengthCapRain", 75.0, 0.0, 100.0);
         STRENGTH_CAP_THUNDER = builder
-                .comment("Maximum non-height-adjusted wind strength while thundering.")
+                .comment("Top of the range natural wind wanders in while thundering, before height scaling.")
                 .defineInRange("strengthCapThunder", 100.0, 0.0, 100.0);
         builder.pop();
 
