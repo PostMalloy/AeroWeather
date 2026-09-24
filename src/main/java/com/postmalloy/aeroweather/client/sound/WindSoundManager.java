@@ -39,8 +39,12 @@ public final class WindSoundManager {
     /** Below this the loop is stopped outright rather than left running inaudibly, freeing the channel. */
     private static final float SILENCE_THRESHOLD = 0.001f;
 
+    /** How long to wait before trying again after the engine refuses to play a loop. */
+    private static final int REFUSED_RETRY_TICKS = 100;
+
     private static WindLoopSoundInstance light;
     private static WindLoopSoundInstance heavy;
+    private static int retryCooldown;
 
     private WindSoundManager() {
     }
@@ -54,6 +58,10 @@ public final class WindSoundManager {
             // Paused: leave the instances alone. The sound engine pauses them with
             // everything else, and stopping here would restart the loops on unpause.
             return;
+        }
+
+        if (retryCooldown > 0) {
+            retryCooldown--;
         }
 
         float strength = localStrength(level, player);
@@ -105,22 +113,29 @@ public final class WindSoundManager {
         SoundManager soundManager = Minecraft.getInstance().getSoundManager();
 
         if (layer == null) {
-            if (targetVolume <= SILENCE_THRESHOLD) {
+            if (targetVolume <= SILENCE_THRESHOLD || retryCooldown > 0) {
                 return null;
             }
             layer = new WindLoopSoundInstance(event);
             soundManager.play(layer);
-        }
-
-        float eased = ease(layer.getVolume(), targetVolume);
-        if (eased <= SILENCE_THRESHOLD && targetVolume <= SILENCE_THRESHOLD) {
-            return stop(layer, soundManager);
+            // A refused play leaves the instance unresolved and never registered: the
+            // engine wasn't loaded, or another mod cancelled or replaced it through
+            // NeoForge's PlaySoundEvent. Back off instead of retrying every tick.
+            if (!soundManager.isActive(layer)) {
+                retryCooldown = REFUSED_RETRY_TICKS;
+                return null;
+            }
         }
 
         // The engine can drop a sound on its own - a resource reload, or the channel
         // being taken. Rebuild next tick rather than silently going quiet forever.
         if (!soundManager.isActive(layer)) {
             return null;
+        }
+
+        float eased = ease(layer.rawVolume(), targetVolume);
+        if (eased <= SILENCE_THRESHOLD && targetVolume <= SILENCE_THRESHOLD) {
+            return stop(layer, soundManager);
         }
 
         layer.setVolume(eased);

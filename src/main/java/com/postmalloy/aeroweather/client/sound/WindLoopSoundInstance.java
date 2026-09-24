@@ -34,6 +34,17 @@ public class WindLoopSoundInstance extends AbstractTickableSoundInstance {
         this.volume = volume;
     }
 
+    /**
+     * The volume the manager last set, before the sound definition's own factor.
+     * Not {@link #getVolume()}: that multiplies by the resolved {@code Sound}, which
+     * is null until the engine actually plays this instance - and it never does if
+     * the play was refused (engine not loaded, or another mod cancelling NeoForge's
+     * {@code PlaySoundEvent}), which crashed the client.
+     */
+    public float rawVolume() {
+        return this.volume;
+    }
+
     @Override
     public boolean canStartSilent() {
         return true;

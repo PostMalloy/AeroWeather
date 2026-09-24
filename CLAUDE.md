@@ -1400,6 +1400,12 @@ Other details that matter:
   rebuilt when it's wanted again. If `SoundManager.isActive` says the engine
   dropped it (a resource reload, a stolen channel), the reference is cleared and
   a fresh loop starts next tick instead of going quiet forever.
+- **Never read a layer's volume through `getVolume()`.** It multiplies by the
+  resolved `Sound`, which `SoundEngine.play` only sets via `resolve()` *after* the
+  engine is loaded and NeoForge's `PlaySoundEvent` lets the sound through. A refused
+  play left it null and crashed the client (reported near y=1000, likely a mod
+  silencing sound up there). Easing reads `rawVolume()`, a play that doesn't show up
+  in `isActive` is dropped, and retries wait 100 ticks.
 - Nothing happens while the game is paused: the engine pauses the loops itself,
   and stopping them here would restart them on unpause.
 - `sounds.json` sets `stream: false`. These are short loops, and a streamed sound
