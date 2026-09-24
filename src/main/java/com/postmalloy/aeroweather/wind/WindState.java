@@ -107,7 +107,7 @@ public final class WindState {
             targetDirectionDeg = WindDirection.normalizeDegrees(baseDirectionDeg + randomRange(random, -maxDirectionDelta, maxDirectionDelta));
             // maxStrengthDelta is in strength units, so it's turned into a fraction of the current
             // band: strength still moves at most that far per retarget, in every weather.
-            float step = randomRange(random, -maxStrengthDelta, maxStrengthDelta) / Math.max(bandCap, 1.0f);
+            float step = randomRange(random, -maxStrengthDelta, maxStrengthDelta) / Math.max(bandWidth(), 1.0f);
             driftTarget = reflectIntoUnit(driftPosition + step);
             // Config is expressed in seconds; one simulation step is one second (WindSimulator's 20-tick cadence).
             int minSteps = AeroWeatherCommonConfig.DRIFT_RETARGET_MIN_SECONDS.get();
@@ -147,8 +147,25 @@ public final class WindState {
             float gustStrength = gustStepsRemaining == 0 ? 0.0f : gustMagnitude * (gustStepsRemaining / (float) gustDurationSteps);
             // Capped by the eased band, not the weather's cap directly: when rain stops the cap
             // drops at once, and capping by it would cut the wind off in a single step.
-            strength = Math.min(clampStrength(driftPosition * bandCap + gustStrength), bandCap);
+            strength = Math.min(clampStrength(bandFloor() + driftPosition * bandWidth() + gustStrength), bandCap);
         }
+    }
+
+    /**
+     * The bottom of the band: natural wind never drops below this. It <em>raises</em>
+     * the band's bottom rather than clamping to it - clamping would stack every value
+     * below the floor up at exactly the floor, about a fifth of all clear weather at
+     * one number, while this keeps the walk evenly spread over what's left. Never above
+     * the cap, so a floor configured higher than a weather's cap simply pins that
+     * weather at its cap instead of inverting the band.
+     */
+    private float bandFloor() {
+        return Math.min((float) AeroWeatherCommonConfig.STRENGTH_FLOOR.getAsDouble(), bandCap);
+    }
+
+    /** How much of the band the walk has to move in, between the floor and the eased cap. */
+    private float bandWidth() {
+        return bandCap - bandFloor();
     }
 
     /** The weather-tier ceiling on natural (non-overridden, pre-elevation-adjustment) wind strength. */

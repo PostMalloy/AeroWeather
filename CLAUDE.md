@@ -260,8 +260,17 @@ speed is clamped to 0.
   clear-weather band with no special-casing needed). This is the **base** wind;
   since M14 it is modulated per position by `WindField` before anything
   consumes it. Everything in this section describes the base value.
-- Effective strength = `overridden ? overrideStrength : min(clamp(driftPosition
-  × bandCap + gustStrength, 0, 100), bandCap)`.
+- Effective strength = `overridden ? overrideStrength : min(clamp(floor +
+  driftPosition × (bandCap − floor) + gustStrength, 0, 100), bandCap)`.
+- **`strengthFloor`** (default 10) is the lowest natural wind ever drops. It
+  *raises* the band's bottom rather than clamping to it: clamping would stack
+  every value below the floor up at exactly the floor — about a fifth of all
+  clear weather on one number — while raising it keeps the walk evenly spread
+  over what's left. So the bands are 10–50 / 10–75 / 10–100, averaging 30 /
+  42.5 / 55. The floor never exceeds the eased cap, so one configured above a
+  weather's cap pins that weather at its cap rather than inverting the band.
+  Overrides (commands, the breeze maker) ignore it; so do height scaling and
+  biome factors, which still reduce the *local* value below it.
 - **Strength drifts within a band set by the weather**: 0–50 clear, 0–75
   rain, 0–100 thunder (`STRENGTH_CAP_CLEAR`/`_RAIN`/`_THUNDER`). The walk
   moves on a normalized `driftPosition` in [0, 1], and strength is that times
@@ -269,7 +278,7 @@ speed is clamped to 0.
   rain widens the whole band under the walk rather than the walk having to
   explore upward, and every weather has the same statistics: an even spread
   over its band, averaging half its cap (25 / 37.5 / 50).
-- Each retarget steps `driftPosition` by `±maxStrengthDelta / bandCap`, so
+- Each retarget steps `driftPosition` by `±maxStrengthDelta / (bandCap − floor)`, so
   strength still moves at most `maxStrengthDelta` per retarget in any
   weather, and **reflects** off 0 and 1 rather than clamping. Clamping parks
   overshoot exactly on the edge, piling up time at 0 and at the cap.

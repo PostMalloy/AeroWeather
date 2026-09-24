@@ -16,6 +16,7 @@
 
   "aeroweather.configuration.weather": "Weather Settings",
   "aeroweather.configuration.easeFactor": "Weather Transition Rate",
+  "aeroweather.configuration.strengthFloor": "Minimum Wind Strength",
   "aeroweather.configuration.strengthCapClear": "Strength Cap (clear)",
   "aeroweather.configuration.strengthCapRain": "Strength Cap (rain)",
   "aeroweather.configuration.strengthCapThunder": "Strength Cap (thunder)",

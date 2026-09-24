@@ -35,6 +35,7 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.IntValue GUST_DURATION_SECONDS;
 
     public static final ModConfigSpec.DoubleValue WEATHER_EASE_FACTOR;
+    public static final ModConfigSpec.DoubleValue STRENGTH_FLOOR;
     public static final ModConfigSpec.DoubleValue STRENGTH_CAP_CLEAR;
     public static final ModConfigSpec.DoubleValue STRENGTH_CAP_RAIN;
     public static final ModConfigSpec.DoubleValue STRENGTH_CAP_THUNDER;
@@ -105,12 +106,15 @@ public final class AeroWeatherCommonConfig {
         builder.pop();
 
         builder.comment(
-                "How weather sets the range wind wanders in. Natural wind drifts evenly between 0 and",
-                "the current weather's cap, so each weather averages half its cap: 25, 37.5 and 50 by default."
+                "How weather sets the range wind wanders in. Natural wind drifts evenly between the floor",
+                "and the current weather's cap, so by default 10-50, 10-75 and 10-100, averaging 30, 42.5 and 55."
         ).push("weather");
         WEATHER_EASE_FACTOR = builder
                 .comment("How quickly the range widens or narrows when the weather changes, as a fraction of the remaining difference per second. Higher responds faster; lower eases in more gently.")
                 .defineInRange("easeFactor", 0.1, 0.001, 1.0);
+        STRENGTH_FLOOR = builder
+                .comment("The lowest natural wind can ever drop, in any weather, before height scaling. The range starts here rather than at 0, and the wind still wanders evenly across what's left. 0 allows dead calm. Operator commands and the breeze maker can still set any strength.")
+                .defineInRange("strengthFloor", 10.0, 0.0, 100.0);
         STRENGTH_CAP_CLEAR = builder
                 .comment("Top of the range natural wind wanders in while it's neither raining nor thundering, before height scaling.")
                 .defineInRange("strengthCapClear", 50.0, 0.0, 100.0);
