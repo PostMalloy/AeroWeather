@@ -161,6 +161,10 @@ integration/
   particlerain/
     ParticleRainWind.java             the wind vector handed to Particle Rain's weather particles; zero Particle
                                        Rain types, always safe to classload (see M12)
+  interactivefoliage/
+    FoliageShaderPatch.java           pure text rewrite of IF's shaders: direction read from Weather.w (see M16)
+    FoliageWind.java                  client tick: eased lean/storm/direction; the Weather vector IF's shaders get;
+                                       version gate and patch-failure fallback. Zero IF types
   simulated/
     WindBearingIntegration.java       the M13 gate: zero Create/Simulated/Sable imports, checks all three with
                                        ModCompat before touching WindBearingRegistration at all
@@ -171,11 +175,15 @@ integration/
 
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
-                                       LoadingModList says that mod is installed ("create", "particlerain", "simulated")
+                                       LoadingModList says that mod is installed ("create", "particlerain", "simulated",
+                                       "mc2_interactivefoliage")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
                                        Particle Rain only by string target/descriptor (see M12)
+  InteractiveFoliageWindMixin.java    IF's weather() and followRain: our wind in, east-only shelter off (see M16)
+  InteractiveFoliageSwayShaderMixin.java  both readSway()s: patches sway.glsl for the vanilla and Iris pipelines
+  InteractiveFoliageLegacyShaderMixin.java  wraps the ResourceProvider IF builds foliage_legacy.vsh from (Sodium)
   SwivelBearingInternals.java         interface @Mixin on Simulated's SwivelBearingBlockEntity: an @Accessor for the
                                        private targetAngleDegrees plus two @Invokers (see M13)
   ScrollValueSlotAccessor.java        interface @Mixin on Create's ScrollValueBehaviour: an @Accessor for the
@@ -1373,6 +1381,211 @@ Other details that matter:
 - `sounds.json` sets `stream: false`. These are short loops, and a streamed sound
   can gap audibly at the wrap — exactly what you'd hear on continuous ambience.
 
+## M16: Interactive Foliage wind
+
+[Interactive Foliage](https://github.com/Kart0/mc2-interactivefoliage) (IF) bends
+plants as entities walk through them, via the [SWAY](https://github.com/RazorPlay01/SWAY)
+library. Its 2.0.0 release added **weather wind**: grass leans while it rains, harder
+in thunder, with a calm idle sway otherwise. AeroWeather now drives that lean —
+**how far and which way** — in any weather. **Optional**: without IF, nothing here
+runs or loads. Verified against the real `2.0.0-neoforge+1.21.1` jar (Modrinth
+`szHc87G5`) and its `-sources.jar`.
+
+**SWAY has no wind at all** — only entity pushes — so only IF is touched. IF
+requires SWAY; we never do, and don't declare it.
+
+### Where IF's wind lives
+
+Entirely on the GPU. Java sets uniforms once per frame; the vertex shader moves every
+vertex. There's **no public wind API** in either mod.
+
+`GpuFoliageRenderer.weather()` (`private static`, `()Lorg/joml/Vector4f;`) returns
+`(rainLevel, thunderLevel, reach, fade)` and is the single source of the `Weather`
+uniform for **all three** render pipelines. In the shader:
+- `x` is the lean, and also blends out the idle sway (`mix(sway, 0, rain)`) — so
+  calm air keeps IF's sway and strong wind replaces it with a lean;
+- `y` multiplies the lean by up to 2× (storm);
+- the lean is gated `rain > 0 ? wind : 0` — but `x` *is* that rain term, so feeding
+  it our wind makes grass lean in clear weather too;
+- `w` is used exactly **once**, as the reach fade width, and IF's Java always passes
+  the constant `WEATHER_WIND_FADE_BLOCKS = 4.0F`.
+
+Clear-weather meshes are **fully exposed**, not zero: shelter is only computed while
+it rains, otherwise `anchor.exposure = 1.0F`. That's what makes driving `x` in clear
+weather work at all.
+
+### Strength
+
+`FoliageWind` samples `LocalWind` each client tick at the player's XZ but the
+**ground** height (`MOTION_BLOCKING` heightmap) — grass grows at the surface, and a
+flying player's altitude would otherwise apply up to 3× height scaling to grass far
+below. `x = clamp(strength / fullLean)` (default 50); `y` ramps from full lean to
+storm strength (default 100). Both ease per tick, so an operator command doesn't snap
+every blade while a 4-second gust still visibly passes through. The first reading
+snaps, so grass doesn't sweep round on login.
+
+If IF's own `weatherWind` option is off, `weather()` returns a zero vector; since the
+reach `z` is never 0 while it's on, `original.z == 0` detects that without naming an IF
+type, and the original is passed through untouched.
+
+**Calm air holds grass still.** IF runs its idle sway at full whenever its waving option
+is on, regardless of weather — so with our wind at 0 the lean vanished but the idle sway
+stayed, and dead calm air still rippled the grass (confirmed live). `calmSway()F` is
+scaled by `clamp(strength / calmSwayFullStrength)` (default 20). `CalmSway` multiplies
+only the idle term; `SwayIntensity` is deliberately left alone, since IF's own comment
+says it scales the idle sway *and* the wind. IF's value is kept as a factor, so its
+waving option still switches the sway off. All three values — lean, storm and idle
+sway — are derived from one eased strength, so they can't drift out of step.
+
+### Direction rides `Weather.w`
+
+The direction is a hard-coded `const vec2 = vec2(-1.0, 0.0)` (lean west, i.e. wind
+from the east) in **two** shader sources that reach the GPU **three** ways:
+
+| Source | Loaded by | Pipeline |
+|---|---|---|
+| `include/sway.glsl` | `LegacyTerrainShader.readSway()` | vanilla terrain |
+| `include/sway.glsl` | `IrisFoliageShaders.readSway()` | Iris shaderpacks |
+| `core/foliage_legacy.vsh` | vanilla `ShaderInstance`, from IF's `registerShaders` | Sodium |
+
+A new uniform would need plumbing through all three, and `foliage_legacy.json` only
+exposes uniforms it lists, so vanilla's `ShaderInstance` couldn't even set one.
+Instead `w` — which `weather()` already delivers everywhere — carries the angle, and
+the shader text is rewritten so the fade uses IF's literal `4.0`.
+
+**The negative sentinel** makes that safe to switch on and off at any time. An angle
+is sent as `w = -(atan2(travel.z, travel.x) + 10)`, always negative; IF's fade is
+always positive. The patched shader checks the sign:
+
+```glsl
+#define WIND_DIRECTION (Weather.w < 0.0 ? vec2(cos(-Weather.w - 10.0), sin(-Weather.w - 10.0)) : vec2(-1.0, 0.0))
+smoothstep(Weather.z - (Weather.w < 0.0 ? 4.0 : Weather.w), Weather.z, ...)
+```
+
+So a patched shader handed IF's own value behaves **bit-identically** to IF's original
+— including its `w = 0` edge case when wind is off. A `#define` is legal where the
+`const` was because every use of the name is inside a function body, never in another
+global `const` initialiser (checked against both sources). Wind from the east encodes
+to `atan2(0, -1) = π` and decodes to `(-1, 0)`, reproducing IF's default exactly;
+the round trip is exact to ~4e-7 across all bearings.
+
+The patches are exact-string replacements in `FoliageShaderPatch` (pure, no MC types,
+checked offline against the real files), four per source: the direction `const`, the
+fade expression, the gust line and the call to the wind function. Any one missing and
+the source is left untouched.
+
+### The storm shake fades in with the lean
+
+IF's wind carries a **flutter** across it and a **tug** along it — in its own words,
+the plant shaking "as if the wind were about to tear it out". Because `phase` already
+includes the sway clock, they run at ~1.7 and ~2.2 Hz, five to seven times faster than
+the calm sway's 0.33 Hz. IF only ever shows them in rain, which eases in over seconds
+and then holds at full, so they always ride on a plant bent well over and read as
+whipping. Our wind holds a light breeze indefinitely, and there the same shake sat on a
+barely-leaning plant, where it read as **bouncing** — worst near the floor, fading from
+view around strength 30 (confirmed live).
+
+Perception is the right lens here, not a metric: the shake's share of a blade's motion
+actually *grows* with wind (38% at strength 10, 81% at 50), yet it only looked wrong at
+the low end. On an upright plant a 2 Hz shake reads as bouncing; on a bent one, as a
+gale. So the shake ramps in with the lean: `smoothstep(0.4, 0.8, Weather.x)`, i.e. none
+below 40% of full lean and IF's full shake from 80% — strength 20 and 40 at the default
+full lean of 50, as tuned live (first shipped as 10–30). Below 20 the grass moves like
+IF's own clear weather, with no shake at all. It scales the `shake`
+argument at the call site, which inside the wind function feeds only the flutter and
+the tug, never the lean (checked in both sources). Keyed to `Weather.x`, so it follows
+`interactiveFoliageFullLeanStrength` if that's retuned; the 0.4/0.8 are shader-baked
+constants in `FoliageShaderPatch`, not config, since changing them needs a shader reload. `sway.glsl` is patched on the return of both
+`readSway()`s. `foliage_legacy.vsh` is patched by swapping the `ResourceProvider` IF
+passes to `new ShaderInstance(...)` in its own `registerShaders`: vanilla reads program
+source through exactly that provider (`getOrCreate` → `getResourceOrThrow` →
+`open()`), so a wrapper that patches one location and passes everything else through
+— `#moj_import`ed includes too — reaches the Sodium path while leaving vanilla's
+shader loading untouched for everyone else.
+
+### The gust is crossfaded, never rotated
+
+The first version rotated the whole wind, gust included, and a reversal made grass
+**glitch back and forth for a couple of seconds** before settling (confirmed live). The
+cause is IF's gust, a travelling wave `sin(-dot(world.xz, direction) * k + t)`:
+
+- `world` is not distance from spawn. IF wraps the camera: `world = pos +
+  (cameraBlockPos & 4095) - cameraOffset`, with `k = 2π·230/4096` (~0.353 rad/block)
+  chosen so exactly 230 cycles fit the wrap, which is what makes the wrap seamless.
+  So `|world|` is typically **1,000–4,000 blocks almost anywhere in the world**.
+- Rotating `direction` by `dθ` shifts every blade's phase by `k · |world| · dθ`. At
+  ~3,000 blocks even ordinary 1.6°/s drift is ~30 rad/s of phase, and a reversal
+  scrambles the wave every frame. Measured offline: a blade's gust value (range 0–1)
+  jumped **0.998 in a single frame** during a 2-second reversal.
+- IF never rotated its direction, so it never met this. Command overrides freeze drift,
+  which is why only the reversal showed at first — normal drift would have shimmered
+  constantly.
+
+**Anchoring the phase near the camera cannot fix it**, and is worth not retrying.
+Snapping the anchor to whole wavelengths adds exact multiples of 2π to the phase,
+which changes nothing; a continuous anchor makes the waves slide along as you walk.
+
+What works is never rotating a wave: **16 stationary waves on fixed compass axes**, and
+the gust is a linear crossfade between the two either side of the wind. No wave ever
+moves, so nothing scrambles at any rotation speed — the same reversal peaks at **0.049**
+per frame. At a sector boundary the outgoing wave has zero weight, so crossing one is
+seamless (measured 1.3e-6). At IF's own direction the crossfade reproduces IF's gust
+exactly, and when `w ≥ 0` the original expression is used verbatim anyway. Only the
+`gust` line is rewritten; IF's `along` line is left in place as dead code.
+
+**Interpolated per frame, and turn-rate capped.** With the scramble gone, a smaller
+jitter remained at high wind (confirmed live): the eased values were written on the
+20 Hz client tick but IF reads them every frame, so at 60 fps the whole field held for
+three frames and then jumped — the first tick of a reversal swung every blade 13° at
+once. `FoliageWind` now keeps previous and current strength and bearing and blends them
+by partial tick at render time (`Mth.lerp`/`Mth.rotLerp`, the wind vane's idiom, on
+the same `getGameTimeDeltaPartialTick(false)` IF itself uses). Exponential easing is
+also fastest at its start (~290°/s for a reversal), which sweeps the gust crossfade
+fast enough to flicker, so the turn is capped (`interactiveFoliageMaxTurnRate`,
+default 90°/s): a steady swing that settles smoothly once the eased step falls under
+the cap. Simulated over a reversal, the worst per-frame turn fell from 13.25° to 1.50°
+and the worst gust change from 0.196 to 0.049, for a settle of 3.8 s instead of 3.1 s.
+
+Two costs: two `sin`s instead of one, and slightly patchier gusts mid-sector, where two
+band orientations mix. One residual: the 230-cycle wrap is only seamless for
+axis-aligned waves, so a diagonal sector's gust can twitch once as the camera crosses a
+multiple of 4096 blocks.
+
+### Falling back
+
+Direction is only encoded when **all** hold: the integration and direction options
+are on, IF's version starts `2.0.` (the text that was verified), and no attempted
+patch has failed. Otherwise `w` stays IF's own value, which every shader — patched
+or not — reads as IF's own direction and fade. An IF update can at worst drop us to
+strength-only; it can never feed a negative `w` to an unpatched shader, where
+`smoothstep` would get `edge0 > edge1`. Every injector is `require = 0`, so a renamed
+IF method logs rather than crashes.
+
+### Shelter
+
+IF's `WindShelter` is hard-coded to its east wind — it sweeps each row east→west.
+With our direction encoded it would shelter the **wrong** side of every wall, which
+reads as a bug, whereas no shelter only means grass behind walls leans too. So while
+direction is encoded, `@ModifyExpressionValue` on the `getRainLevel` call inside
+`followRain` reports 0, and IF's own state machine keeps shelter off. With direction
+off (config or fallback) IF's rain-only shelter runs unchanged, and is correct again.
+Toggling mid-rain leaves already-sheltered sections as they were until re-meshed
+(F3+A).
+
+### Optional, never required
+
+Four layers, all matching Particle Rain (M12):
+1. `mods.toml`: `type="optional"`, `versionRange="[0,)"`, `ordering="AFTER"`,
+   `side="CLIENT"`.
+2. Build: `localRuntime` only — never compiled against or bundled. A clean build
+   with IF only on the runtime classpath is itself the proof.
+3. `AeroWeatherMixinPlugin` withholds all three mixins unless `LoadingModList` has
+   `mc2_interactivefoliage`, so no IF class is ever resolved without it.
+4. `FoliageWind`'s tick returns at once unless IF is loaded.
+
+**Licence** is inconsistent (Modrinth ARR, mods.toml CC-BY-NC-SA-4.0, GitHub MIT).
+Nothing of IF's is copied or shipped: the shader text is patched in memory at load.
+
 ## Command reference
 
 ```
@@ -1422,6 +1635,11 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   `particlerain` is absent. Its helper,
   `integration/particlerain/ParticleRainWind`, contains no Particle Rain
   references at all and is always safe to classload.
+- **Fifth sanctioned exception (M16)**: the three `InteractiveFoliage*Mixin`s target
+  Interactive Foliage classes on the same terms as M9 and M12 — string targets and
+  descriptors only, never a type, withheld by `AeroWeatherMixinPlugin` when
+  `mc2_interactivefoliage` is absent. Their helpers, `FoliageWind` and
+  `FoliageShaderPatch`, contain no IF references at all.
 - **Fourth sanctioned exception, and the widest (M13)**: the wind bearing's
   `block/WindBearingBlock`, `block/WindBearingBlockEntity` and
   `block/WindBearingPlateBlock` reference Create, Simulated **and** Sable types
@@ -1549,6 +1767,17 @@ three classes. Not confirmed yet: that the loops are seamless, that the two laye
 actually blend rather than beat against each other, and whether the default
 thresholds and fade rate feel right in game.
 
+**M16 (Interactive Foliage wind, see its section) has been reported working in a live
+client** — both strength and direction — after which two fixes went in, both
+both confirmed live: calm air now holds grass still, and the gust is crossfaded so a
+direction change no longer scrambles it. A residual jitter at high wind was then fixed by
+interpolating per frame and capping the turn rate — compile-verified only. Verified statically: every IF descriptor against the binary
+jar; both shader patches applied to the real `sway.glsl` and `foliage_legacy.vsh` and
+the angle round trip checked offline; IF referenced only as strings in the three
+mixins, nothing bundled, and `mods.toml` declaring it optional. **Not verified:** that
+the patched GLSL compiles (no `glslangValidator` was available), and all three render
+pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on them.
+
 ## External references
 
 - Create: real modId `create`. Modrinth project `create` (id
@@ -1673,6 +1902,13 @@ thresholds and fade rate feel right in game.
   published builds (`v4-beta.11` = `dc44afa684`), which is the only reliable
   way to read the right code - the repo is a Stonecutter multi-version tree
   whose HEAD targets much newer Minecraft.
+- Interactive Foliage: https://github.com/Kart0/mc2-interactivefoliage. Real modId
+  `mc2_interactivefoliage`, Modrinth `mc2-interactive-foliage` (id `ba5MV2CF`),
+  pinned to `2.0.0-neoforge+1.21.1` (`szHc87G5`), client-only, requires SWAY. Tag
+  `2.0.0` = commit `560c535`. Stonecutter multi-version tree, so read the tag, not HEAD.
+- SWAY: https://github.com/RazorPlay01/SWAY. Real modId `sway`, Modrinth `sway` (id
+  `Gj6Yce3v`), pinned to `2.4.5-neoforge+1.21.1` (`uGTq42kW`). On our dev runtime only
+  because IF needs it; AeroWeather never touches it.
 - Modrinth Maven: `https://api.modrinth.com/maven` (wired via
   `exclusiveContent`/`includeGroup "maven.modrinth"`), coordinates
   `maven.modrinth:<slug>:<version id>`, pinned in `gradle.properties`.

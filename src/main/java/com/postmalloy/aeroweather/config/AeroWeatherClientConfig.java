@@ -34,6 +34,14 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue WIND_SOUND_HEAVY_FULL_STRENGTH;
     public static final ModConfigSpec.DoubleValue WIND_SOUND_FADE_RATE;
 
+    public static final ModConfigSpec.BooleanValue INTERACTIVE_FOLIAGE_ENABLED;
+    public static final ModConfigSpec.BooleanValue INTERACTIVE_FOLIAGE_DIRECTION_ENABLED;
+    public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_CALM_SWAY_FULL_STRENGTH;
+    public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_FULL_LEAN_STRENGTH;
+    public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_STORM_STRENGTH;
+    public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_EASE_RATE;
+    public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_MAX_TURN_RATE;
+
     public static final ModConfigSpec.BooleanValue PARTICLE_RAIN_ENABLED;
     public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_ANGLE_DEGREES;
     public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_REFERENCE_STRENGTH;
@@ -106,6 +114,33 @@ public final class AeroWeatherClientConfig {
         PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES = builder
                 .comment("Sandstorm dust never slants less than this many degrees from vertical, however calm the wind - blowing sand shouldn't fall straight down like rain. Because Particle Rain gives every type one shared wind, this floor tilts rain slightly too: about 4 degrees in dead calm at the default, which is far less than it sounds. 0 removes the floor.")
                 .defineInRange("particleRainSandMinAngleDegrees", 45.0, 0.0, 89.0);
+        builder.pop();
+
+        builder.comment(
+                "Interactive Foliage integration. Ignored unless Interactive Foliage is installed.",
+                "Our wind decides how far grass leans, and which way, in any weather - not only in rain."
+        ).push("interactiveFoliage");
+        INTERACTIVE_FOLIAGE_ENABLED = builder
+                .comment("Whether AeroWeather's wind drives Interactive Foliage's grass lean. Off hands it back to Interactive Foliage's own rain-only wind.")
+                .define("interactiveFoliageEnabled", true);
+        INTERACTIVE_FOLIAGE_DIRECTION_ENABLED = builder
+                .comment("Whether grass also leans the way our wind blows. Off keeps Interactive Foliage's fixed east wind and only follows our strength. While on, Interactive Foliage's wind shelter behind walls is turned off, since it only knows how to shelter from an east wind.")
+                .define("interactiveFoliageDirectionEnabled", true);
+        INTERACTIVE_FOLIAGE_CALM_SWAY_FULL_STRENGTH = builder
+                .comment("Wind strength at which Interactive Foliage's gentle idle sway reaches full. Below it the sway fades out, so grass stands still in dead calm air. As wind rises further, the lean takes over from the sway.")
+                .defineInRange("interactiveFoliageCalmSwayFullStrength", 20.0, 1.0, 300.0);
+        INTERACTIVE_FOLIAGE_FULL_LEAN_STRENGTH = builder
+                .comment("Wind strength at which grass leans fully. Below it the lean fades toward Interactive Foliage's calm idle sway.")
+                .defineInRange("interactiveFoliageFullLeanStrength", 50.0, 1.0, 300.0);
+        INTERACTIVE_FOLIAGE_STORM_STRENGTH = builder
+                .comment("Wind strength at which grass reaches its storm lean, twice the full lean. Should be above the full-lean strength.")
+                .defineInRange("interactiveFoliageStormStrength", 100.0, 1.0, 300.0);
+        INTERACTIVE_FOLIAGE_EASE_RATE = builder
+                .comment("How quickly the lean and its direction follow the wind, as a fraction of the difference per tick. Higher shows gusts more sharply; lower is smoother.")
+                .defineInRange("interactiveFoliageEaseRate", 0.08, 0.001, 1.0);
+        INTERACTIVE_FOLIAGE_MAX_TURN_RATE = builder
+                .comment("The fastest grass may swing round to a new wind direction, in degrees per second. A full reversal takes at least 180 divided by this. Faster looks snappier but can flicker the gusts at high wind.")
+                .defineInRange("interactiveFoliageMaxTurnRate", 90.0, 1.0, 3600.0);
         builder.pop();
 
         builder.comment(

@@ -37,6 +37,14 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     private static final List<String> SIMULATED_MIXINS =
             List.of("SwivelBearingInternals", "WindBearingPlateMixin", "WindBearingPlateParentMixin",
                     "ScrollValueSlotAccessor");
+    /**
+     * Interactive Foliage (M16), an optional client-side integration. Without IF none of these is
+     * registered, so none of its classes is ever resolved and AeroWeather runs exactly as before.
+     */
+    private static final String INTERACTIVE_FOLIAGE_MODID = "mc2_interactivefoliage";
+    private static final List<String> INTERACTIVE_FOLIAGE_MIXINS =
+            List.of("InteractiveFoliageWindMixin", "InteractiveFoliageSwayShaderMixin",
+                    "InteractiveFoliageLegacyShaderMixin");
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -58,7 +66,7 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        List<String> mixins = new ArrayList<>(6);
+        List<String> mixins = new ArrayList<>(9);
         if (isLoaded(CREATE_MODID)) {
             mixins.add(WINDMILL_MIXIN);
         }
@@ -67,6 +75,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
         }
         if (isLoaded(SIMULATED_MODID)) {
             mixins.addAll(SIMULATED_MIXINS);
+        }
+        if (isLoaded(INTERACTIVE_FOLIAGE_MODID)) {
+            mixins.addAll(INTERACTIVE_FOLIAGE_MIXINS);
         }
         return mixins;
     }

@@ -114,6 +114,18 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="CLIENT"
 
+# Interactive Foliage (M16): our wind drives how far, and which way, its grass leans. OPTIONAL -
+# AeroWeather runs normally without it, and the integration only switches on when both are
+# installed. Its mixins name it only by string and AeroWeatherMixinPlugin withholds them when
+# it's absent. Client-only mod, like Particle Rain. versionRange must be "[0,)", not "" - an
+# empty range rejects every version (see CLAUDE.md).
+[[dependencies.${mod_id}]]
+    modId="mc2_interactivefoliage"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="CLIENT"
+
 # Optional soft dependencies for M7's Aeronautics wind force integration (see CLAUDE.md).
 # Sable is the actual technical dependency (AeronauticsWindForceApplier's API surface);
 # Create is Sable's own optional dependency and is declared here too since it's present

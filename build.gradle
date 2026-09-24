@@ -208,6 +208,14 @@ dependencies {
     // needed. Present here for dev-client testing.
     localRuntime "maven.modrinth:particle-rain:${particle_rain_version}"
 
+    // Interactive Foliage (M16): our wind drives its grass lean, strength and direction.
+    // localRuntime only, and an optional dependency in mods.toml - AeroWeather must run
+    // normally without it. Its three mixins name it purely by string (weather() is
+    // ()Lorg/joml/Vector4f;, readSway() is ()Ljava/lang/String;), so there's no compile
+    // dependency, and nothing of it is bundled. SWAY is only here because IF requires it.
+    localRuntime "maven.modrinth:mc2-interactive-foliage:${interactive_foliage_version}"
+    localRuntime "maven.modrinth:sway:${sway_version}"
+
     // GeckoLib (M10): renders the wind vane block's animated model. A REQUIRED dependency,
     // unlike Sable/Create above - declared type="required" in neoforge.mods.toml, so no
     // ModCompat gate is needed around it. `implementation` so it's on the dev runtime too.
