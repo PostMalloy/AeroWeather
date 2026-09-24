@@ -52,7 +52,7 @@
   "block.aeroweather.wind_bearing_plate": "Wind Bearing Plate",
 
   "aeroweather.configuration.interactiveFoliage": "Interactive Foliage Settings",
-  "aeroweather.configuration.interactiveFoliageEnabled": "Drive Foliage With Our Wind",
+  "aeroweather.configuration.interactiveFoliageEnabled": "Drive Foliage With AeroWeather Wind",
   "aeroweather.configuration.interactiveFoliageDirectionEnabled": "Lean With Wind Direction",
   "aeroweather.configuration.interactiveFoliageCalmSwayFullStrength": "Full Idle Sway At Strength",
   "aeroweather.configuration.interactiveFoliageFullLeanStrength": "Full Lean At Strength",
