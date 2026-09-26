@@ -5,7 +5,8 @@
 <p align="center">
   <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/aeroweather.gif" width="50%" />
 </p>
-<small> Shown alongside [Particle Rain](https://modrinth.com/mod/particle-rain) and [Interactive Foliage](https://www.curseforge.com/minecraft/mc-mods/mc2-interactive-foliage) </small>
+
+<small> <p align="center"> Shown alongside ![Particle Rain](https://modrinth.com/mod/particle-rain) and [Interactive Foliage](https://www.curseforge.com/minecraft/mc-mods/mc2-interactive-foliage) </p> </small>
 
 
 
@@ -52,6 +53,7 @@ The mod was designed to be as configurable as possible.
 ## Compatibility
 
 * [Particle Rain](https://modrinth.com/mod/particle-rain): particles are wind-driven and move in the direction of the wind.
+* [Interactive Foliage](https://www.curseforge.com/minecraft/mc-mods/mc2-interactive-foliage): Grass movement from this mod is derived from the simulated wind of AeroWeather.
 
 ## Future Features
 
