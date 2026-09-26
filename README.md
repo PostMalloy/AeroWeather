@@ -2,7 +2,11 @@
   <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/Logo.png" width="100%" />
 </p>
 
-https://github.com/PostMalloy/AeroWeather/blob/master/img/aeroweather.mp4
+<p align="center">
+  <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/aeroweather.gif" width="50%" />
+</p>
+<small> Shown alongside [Particle Rain](https://modrinth.com/mod/particle-rain) and [Interactive Foliage](https://www.curseforge.com/minecraft/mc-mods/mc2-interactive-foliage) </small>
+
 
 
 ## Description
