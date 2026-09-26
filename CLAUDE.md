@@ -29,8 +29,41 @@ this list if they ever diverge.
 - Java 21 toolchain, Gradle `9.2.1`
 - Mojang mappings + Parchment `2024.11.17`
 - GeckoLib `4.9.2` — a **required** dependency, unlike Create/Sable (renders the wind vane, M10)
+- Players may run NeoForge `21.1.62+` / GeckoLib `4.7.7+` — see "Supported range" below
 - `mod_id=aeroweather`, `mod_group_id=com.postmalloy.aeroweather`
 - License: MIT
+
+### Supported range vs build version
+
+We **build** against NeoForge `21.1.248` / GeckoLib `4.9.2`, but players may **run**
+NeoForge `[21.1.62,)` with GeckoLib `[4.7.7,)` — `neo_version_range` and
+`geckolib_version_range` in `gradle.properties`, deliberately separate from
+`neo_version`/`geckolib_version` (the template used to write `[${neo_version},)`,
+which silently made the build version the floor).
+
+- **21.1.62 is GeckoLib's floor, not ours.** Every GeckoLib 4.8+ needs 21.1.150; the
+  4.7 line needs 21.1.62, and 4.7.7 is its newest release. Our own code compiles
+  against NeoForge 21.1.1.
+- **How it was verified** (static only — the low end hasn't been run in game, and the
+  dev client can't go below 21.1.228 while Create/Sable are on `localRuntime`):
+  compile a scratch copy with `-Pneo_version=<old>` (and `-Pgeckolib_version=18qeSgOb`
+  for 4.7.7), dump every `Methodref`/`Fieldref`/`Class` constant touching
+  `net/neoforged`, `net/minecraft`, `com/mojang` (or `software/bernie`) with
+  `javap -v`, and diff against the 21.1.248 build. They were identical — 919 NeoForge/MC
+  refs across 21.1.1, 21.1.150 and 21.1.248, 27 GeckoLib refs across 4.7.7 and 4.9.2 —
+  so the jar built against the newest links on the oldest. **Re-run this before bumping
+  `neo_version` or `geckolib_version`**: javac could start picking an overload only newer
+  builds have, and nothing else would catch it.
+- The GeckoLib internals the vane leans on (see M10) are unchanged in 4.7.7:
+  `getTextureResource(T, renderer)` delegating to the one-arg form,
+  `DefaultedGeoModel.withAltTexture`/`buildFormattedTexturePath`, the default
+  `renderRecursively` pushing then `prepMatrixForBone`, and the BEWLR item mixin.
+- NeoForge 21.1.1 bundles MixinExtras 0.3.5 and Mixin 0.8.6 (21.1.248: 0.5.3 / 0.8.7).
+  Our mixins only use `@ModifyExpressionValue`, `@ModifyReturnValue`, `@WrapOperation`
+  (all MixinExtras 0.2+) and Mixin 0.8.6 knows `JAVA_21`. Don't reach for newer
+  MixinExtras features (`@Expression`, `@WrapMethod`, ...) without raising the floor.
+- Optional mods don't constrain it: Create (21.1.219+), Sable and Aeronautics
+  (21.1.228+) enforce their own floors, and our integrations just stay off below them.
 
 ## Build / run commands
 
