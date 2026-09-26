@@ -52,7 +52,8 @@ final class AmbientWindDrift {
         float strength = WindHeightScaling.scale(ClientWindState.strength() * field.strengthFactor(), y, level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
         if (strength <= 0.0F) {
             return null;
         }

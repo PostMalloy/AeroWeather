@@ -31,8 +31,8 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * of where they started, so the ones that happen to spawn downwind
  * simply have less visible travel time before expiring. Both spawn rate
  * and drift speed scale with wind strength. Strength is additionally
- * scaled by the player's elevation via {@link WindHeightScaling} - 0 at
- * or below sea level, ramping up above it - computed once per tick from
+ * scaled by the player's elevation via {@link WindHeightScaling} - half
+ * strength at sea level, none below it, ramping up above - computed once per tick from
  * the player's own Y rather than per particle, since the small amount of
  * per-particle height jitter isn't meaningful against the scale this
  * curve operates over. Particle tuning comes from
@@ -104,7 +104,8 @@ public final class WindParticleSpawner {
         float strength = WindHeightScaling.scale(baseStrength * field.strengthFactor(), player.getY(), level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
         if (strength <= 0.0F) {
             return;
         }

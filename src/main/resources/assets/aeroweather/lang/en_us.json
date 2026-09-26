@@ -30,6 +30,7 @@
   "aeroweather.configuration.referenceAboveSeaLevel": "Reference Height (from Sealevel)",
   "aeroweather.configuration.exponent": "Exponent",
   "aeroweather.configuration.maxMultiplier": "Multiplier (max)",
+  "aeroweather.configuration.seaLevelMultiplier": "Multiplier (sea level)",
 
   "aeroweather.configuration.aeronautics": "Aeronautics Settings",
   "aeroweather.configuration.pressureCoefficient": "Pressure Coefficient",

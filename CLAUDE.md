@@ -121,7 +121,7 @@ wind/
   WindSavedData.java                  SavedData, one per ServerLevel via getDataStorage().computeIfAbsent(...)
   WindSimulator.java                  LevelTickEvent.Post @ 20-tick cadence: drift/gust/weather band/override
   WindOverride.java                   pinned direction/strength value type (operator command, or breeze maker)
-  WindHeightScaling.java              pure function: base strength -> elevation-scaled strength (power-law, 0 at/below sea level)
+  WindHeightScaling.java              pure function: base strength -> elevation-scaled strength (power law over a sea-level floor, 0 below)
   FlowNoise.java                      pure function: deterministic 2D value noise, the flow map that bends direction (see M14)
   WindField.java                      per-position direction offset + strength factor; 2-layer cell cache, blur, bilinear
   BiomeWindFactors.java               biome -> strength factor: config overrides, then tag rules, then a downfall fallback
@@ -329,10 +329,21 @@ speed is clamped to 0.
 - Gusts: short probabilistic additive spikes that decay, layered on top
   of the drift value.
 - Elevation scaling (`wind/WindHeightScaling.java`, a standalone pure
-  function): approximates the real-world wind profile power law — 0 at
-  or below sea level, reaching base strength at a configurable reference
-  height (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.4), capped
+  function): approximates the real-world wind profile power law, reaching
+  base strength at a configurable reference height
+  (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.4), capped
   at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 3x).
+  - **At sea level the multiplier is `HEIGHT_SEA_LEVEL_MULTIPLIER` (default 0.5), not
+    0**: `max(powerLaw, seaLevelMultiplier)`. A pure power law is 0 at sea level,
+    which made beaches and open ocean dead calm. It's a floor, not a blend, so the
+    tuned curve is untouched above the crossover (~4.4 blocks up at defaults:
+    `25 × 0.5^(1/0.4)`); a blend would have weakened wind at every altitude. 0
+    restores the pure power law.
+  - **Below sea level there's no wind at all** — but "below" starts one block
+    under it (`SURFACE_MARGIN`). Sea level is the top of the water, so the top
+    water block, and a boat or a swimmer at the surface, sit at y just under it;
+    a strict cutoff gave players sailing on the ocean no wind. The step from 0 to
+    the floor there is deliberate; sound, grass and the vane all ease across it.
   Kept standalone (not baked into `WindState`) since `WindParticleSpawner`
   (client, player's Y), `AeronauticsWindForceApplier` (server, a
   contraption's center-of-mass Y), and `AmbientWindDrift` (client, a

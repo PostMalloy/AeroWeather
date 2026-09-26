@@ -95,7 +95,8 @@ public final class AeroWeatherCommand {
         float adjustedStrength = WindHeightScaling.scale(wind.strength() * field.strengthFactor(), position.y, level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
         int adjustedStrengthRounded = Math.round(adjustedStrength);
 
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.info",

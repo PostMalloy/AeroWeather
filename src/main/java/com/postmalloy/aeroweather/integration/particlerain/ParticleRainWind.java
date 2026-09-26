@@ -75,6 +75,7 @@ public final class ParticleRainWind {
     private static double cachedReferenceHeight;
     private static double cachedExponent;
     private static double cachedMaxMultiplier;
+    private static double cachedSeaLevelMultiplier;
 
     private ParticleRainWind() {
     }
@@ -102,7 +103,7 @@ public final class ParticleRainWind {
         WindField.Sample field = WindField.at(level, x, z);
 
         float adjustedStrength = WindHeightScaling.scale(cachedBaseStrength * field.strengthFactor(), y,
-                cachedSeaLevel, cachedReferenceHeight, cachedExponent, cachedMaxMultiplier);
+                cachedSeaLevel, cachedReferenceHeight, cachedExponent, cachedMaxMultiplier, cachedSeaLevelMultiplier);
         // The floor keeps sandstorm dust blowing sideways even in dead calm - a sandstorm that
         // falls straight down like rain isn't a sandstorm. It's a floor on the wind vector, not
         // on any one particle's angle, because getWind is shared by every particle type and
@@ -152,5 +153,6 @@ public final class ParticleRainWind {
         cachedReferenceHeight = AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble();
         cachedExponent = AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble();
         cachedMaxMultiplier = AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble();
+        cachedSeaLevelMultiplier = AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble();
     }
 }

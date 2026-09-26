@@ -47,6 +47,7 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue HEIGHT_REFERENCE_ABOVE_SEA_LEVEL;
     public static final ModConfigSpec.DoubleValue HEIGHT_EXPONENT;
     public static final ModConfigSpec.DoubleValue HEIGHT_MAX_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue HEIGHT_SEA_LEVEL_MULTIPLIER;
 
     public static final ModConfigSpec.DoubleValue AERONAUTICS_PRESSURE_COEFFICIENT;
     public static final ModConfigSpec.DoubleValue AERONAUTICS_MAX_FORCE;
@@ -141,7 +142,8 @@ public final class AeroWeatherCommonConfig {
         builder.comment(
                 "How wind strength scales with elevation, approximating the real-world",
                 "wind profile power law (wind speed increasing with height above the",
-                "surface): 0 at or below sea level, ramping up above it. Server-authoritative",
+                "surface): a share of the base strength at sea level, ramping up above it, and none",
+                "at all below sea level. Server-authoritative",
                 "since /aeroweather wind info reports the elevation-adjusted value, and the",
                 "aeronautics wind force below samples it at a contraption's own altitude."
         ).push("height");
@@ -154,6 +156,9 @@ public final class AeroWeatherCommonConfig {
         HEIGHT_MAX_MULTIPLIER = builder
                 .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
                 .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
+        HEIGHT_SEA_LEVEL_MULTIPLIER = builder
+                .comment("Multiplier at sea level: the least wind anywhere at or above it, as a share of the base strength. The height curve takes over once it climbs past this. Below sea level there is no wind at all. 0 gives a pure power law, with no wind at sea level either.")
+                .defineInRange("seaLevelMultiplier", 0.5, 0.0, 1.0);
         builder.pop();
 
         builder.comment(

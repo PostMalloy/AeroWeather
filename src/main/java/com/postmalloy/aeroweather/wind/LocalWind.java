@@ -92,6 +92,7 @@ public final class LocalWind {
         return WindHeightScaling.scale(baseStrength, y, level.getSeaLevel(),
                 AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
                 AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble());
+                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
+                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
     }
 }
