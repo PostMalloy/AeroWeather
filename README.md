@@ -1,7 +1,9 @@
 <p align="center">
   <img src="https://github.com/PostMalloy/AeroWeather/blob/master/img/Logo.png" width="100%" />
 </p>
-
+<video width="320" height="240" controls>
+  <source src="https://github.com/PostMalloy/AeroWeather/blob/master/img/aeroweather.mp4" type="video/mp4">
+</video>
 ## Description
 Aeroweather is a minecraft mod that provides a lightweight and configurable wind system to minecraft. 
 
