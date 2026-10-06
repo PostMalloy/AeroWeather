@@ -1463,7 +1463,14 @@ library. Its 2.0.0 release added **weather wind**: grass leans while it rains, h
 in thunder, with a calm idle sway otherwise. AeroWeather now drives that lean —
 **how far and which way** — in any weather. **Optional**: without IF, nothing here
 runs or loads. Verified against the real `2.0.0-neoforge+1.21.1` jar (Modrinth
-`szHc87G5`) and its `-sources.jar`.
+`szHc87G5`) and its `-sources.jar`, then re-verified against `2.1.1` (`wyQ8QFgr`):
+every hooked member (`weather`, `calmSway`, `followRain`'s `getRainLevel`, both
+`readSway`s, `registerShaders`' `getResourceProvider`) keeps its descriptor, `weather()`
+and `calmSway()` are bytecode-identical, and both patches still apply. 2.1 moved the
+lean/fade/wind block into a `motion()` helper that a new "hanging on leaves" path (vines
+on waving leaves) calls a second time, so our fade sentinel and shake ramp cover that
+path too. Its new `foliage_modern`/`foliage_uniforms` shaders are for newer Minecraft
+only; the 1.21.1 build never loads them.
 
 **SWAY has no wind at all** — only entity pushes — so only IF is touched. IF
 requires SWAY; we never do, and don't declare it.
@@ -1628,7 +1635,7 @@ multiple of 4096 blocks.
 ### Falling back
 
 Direction is only encoded when **all** hold: the integration and direction options
-are on, IF's version starts `2.0.` (the text that was verified), and no attempted
+are on, IF's version starts `2.0.` or `2.1.` (the text that was verified), and no attempted
 patch has failed. Otherwise `w` stays IF's own value, which every shader — patched
 or not — reads as IF's own direction and fade. An IF update can at worst drop us to
 strength-only; it can never feed a negative `w` to an unpatched shader, where
@@ -1978,8 +1985,8 @@ pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on t
   whose HEAD targets much newer Minecraft.
 - Interactive Foliage: https://github.com/Kart0/mc2-interactivefoliage. Real modId
   `mc2_interactivefoliage`, Modrinth `mc2-interactive-foliage` (id `ba5MV2CF`),
-  pinned to `2.0.0-neoforge+1.21.1` (`szHc87G5`), client-only, requires SWAY. Tag
-  `2.0.0` = commit `560c535`. Stonecutter multi-version tree, so read the tag, not HEAD.
+  pinned to `2.1.1-neoforge+1.21.1` (`wyQ8QFgr`; M16 was first written against
+  `2.0.0`, `szHc87G5`, tag `2.0.0` = commit `560c535`), client-only, requires SWAY. Stonecutter multi-version tree, so read the tag, not HEAD.
 - SWAY: https://github.com/RazorPlay01/SWAY. Real modId `sway`, Modrinth `sway` (id
   `Gj6Yce3v`), pinned to `2.4.5-neoforge+1.21.1` (`uGTq42kW`). On our dev runtime only
   because IF needs it; AeroWeather never touches it.

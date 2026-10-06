@@ -3,6 +3,7 @@ package com.postmalloy.aeroweather.integration.interactivefoliage;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 import org.joml.Vector4f;
@@ -56,7 +57,7 @@ public final class FoliageWind {
     private static final String MOD_ID = "mc2_interactivefoliage";
 
     /** IF versions whose shader text {@link FoliageShaderPatch} was checked against. */
-    private static final String VERIFIED_VERSION_PREFIX = "2.0.";
+    private static final List<String> VERIFIED_VERSION_PREFIXES = List.of("2.0.", "2.1.");
 
     private static final boolean LOADED = ModCompat.isLoaded(MOD_ID);
 
@@ -278,7 +279,8 @@ public final class FoliageWind {
     /** Read lazily, once: ModList exists by then, and the answer can't change during a session. */
     private static final class VersionCheck {
         static final boolean VERIFIED = ModList.get().getModContainerById(MOD_ID)
-                .map(container -> container.getModInfo().getVersion().toString().startsWith(VERIFIED_VERSION_PREFIX))
+                .map(container -> container.getModInfo().getVersion().toString())
+                .map(version -> VERIFIED_VERSION_PREFIXES.stream().anyMatch(version::startsWith))
                 .orElse(false);
 
         static {
