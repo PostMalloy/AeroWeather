@@ -7,12 +7,13 @@ import com.mojang.brigadier.context.CommandContext;
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.WindSync;
+import com.postmalloy.aeroweather.wind.UpperWindLayer;
+import com.postmalloy.aeroweather.wind.UpperWindMode;
 import com.postmalloy.aeroweather.wind.WindDirection;
-import com.postmalloy.aeroweather.wind.WindField;
-import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindOverride;
 import com.postmalloy.aeroweather.wind.WindSavedData;
 import com.postmalloy.aeroweather.wind.WindState;
+import com.postmalloy.aeroweather.wind.WorldWind;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -88,21 +89,29 @@ public final class AeroWeatherCommand {
         // getPosition() works for any command source (player, console, command block), not just players,
         // so this degrades gracefully rather than requiring the source to be a ServerPlayer.
         Vec3 position = context.getSource().getPosition();
-        // The local value: base wind bent and scaled by the flow map and the biome here. Neutral
-        // when per-biome wind is off, so the reported numbers then match the base exactly.
-        WindField.Sample field = WindField.at(level, position.x, position.z);
-        int localDirectionRounded = Math.round(WindDirection.normalizeDegrees(wind.directionDeg() + field.directionOffsetDeg()));
-        float adjustedStrength = WindHeightScaling.scale(wind.strength() * field.strengthFactor(), position.y, level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
-        int adjustedStrengthRounded = Math.round(adjustedStrength);
+        // The local value: base wind bent and scaled by the flow map and the biome here, by
+        // altitude, and by the upper layer above the clouds.
+        WorldWind.Sample local = WorldWind.at(level, position.x, position.y, position.z, wind.directionDeg(), wind.strength());
+        int localDirectionRounded = Math.round(local.directionDeg());
+        int adjustedStrengthRounded = Math.round(local.strength());
 
         context.getSource().sendSuccess(() -> Component.translatable("commands.aeroweather.wind.info",
                 nearest.displayName(), Math.round(wind.directionDeg()), strengthRounded, source,
                 adjustedStrengthRounded, localDirectionRounded), false);
+        if (UpperWindLayer.activeIn(level)) {
+            context.getSource().sendSuccess(() -> upperLayerLabel(level), false);
+        }
         return strengthRounded;
+    }
+
+    /** The upper layer in this dimension: where it starts, and how it blows relative to the wind below. */
+    private static Component upperLayerLabel(ServerLevel level) {
+        int height = (int) Math.round(AeroWeatherCommonConfig.UPPER_WIND_LAYER_HEIGHT.getAsDouble());
+        if (UpperWindLayer.mode() == UpperWindMode.SIMPLE) {
+            return Component.translatable("commands.aeroweather.wind.info.upper.simple", height);
+        }
+        int offset = Math.round(UpperWindLayer.offsetDeg(level.getGameTime()));
+        return Component.translatable("commands.aeroweather.wind.info.upper.complex", height, offset);
     }
 
     /** Where the current wind comes from: natural simulation, an operator's pin, or a breeze (with its time left). */

@@ -2,10 +2,8 @@ package com.postmalloy.aeroweather.client.particle;
 
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
-import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.wind.WindDirection;
-import com.postmalloy.aeroweather.wind.WindField;
-import com.postmalloy.aeroweather.wind.WindHeightScaling;
+import com.postmalloy.aeroweather.wind.WorldWind;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.ResourceLocation;
@@ -47,19 +45,11 @@ final class AmbientWindDrift {
 
         // Per position, not per dimension: a particle drifting over a forest should be
         // pushed less than one over the plains next to it.
-        WindField.Sample field = WindField.at(level, x, z);
-
-        float strength = WindHeightScaling.scale(ClientWindState.strength() * field.strengthFactor(), y, level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
-        if (strength <= 0.0F) {
+        WorldWind.Sample wind = WorldWind.at(level, x, y, z, ClientWindState.directionDeg(), ClientWindState.strength());
+        if (wind.strength() <= 0.0F) {
             return null;
         }
 
-        Vec3 travel = WindDirection.travelVector(
-                WindDirection.normalizeDegrees(ClientWindState.directionDeg() + field.directionOffsetDeg()));
-        return travel.scale(intensity * (strength / 100.0));
+        return WindDirection.travelVector(wind.directionDeg()).scale(intensity * (wind.strength() / 100.0));
     }
 }

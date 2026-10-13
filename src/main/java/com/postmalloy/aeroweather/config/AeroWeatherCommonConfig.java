@@ -2,6 +2,8 @@ package com.postmalloy.aeroweather.config;
 
 import java.util.List;
 
+import com.postmalloy.aeroweather.wind.UpperWindMode;
+
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
@@ -22,6 +24,15 @@ public final class AeroWeatherCommonConfig {
     public static final ModConfigSpec.DoubleValue FLOW_MAP_SCALE_BLOCKS;
     public static final ModConfigSpec.DoubleValue FLOW_MAP_STRENGTH_VARIATION;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> BIOME_WIND_FACTORS;
+
+    public static final ModConfigSpec.BooleanValue UPPER_WIND_ENABLED;
+    public static final ModConfigSpec.EnumValue<UpperWindMode> UPPER_WIND_MODE;
+    public static final ModConfigSpec.DoubleValue UPPER_WIND_LAYER_HEIGHT;
+    public static final ModConfigSpec.DoubleValue UPPER_WIND_TRANSITION_BLOCKS;
+    public static final ModConfigSpec.DoubleValue UPPER_WIND_OFFSET_DEGREES;
+    public static final ModConfigSpec.DoubleValue UPPER_WIND_OFFSET_WALK_MIN_DEGREES;
+    public static final ModConfigSpec.DoubleValue UPPER_WIND_OFFSET_WALK_MAX_DEGREES;
+    public static final ModConfigSpec.IntValue UPPER_WIND_OFFSET_WALK_PERIOD_SECONDS;
 
     public static final ModConfigSpec.DoubleValue DRIFT_MAX_DIRECTION_DELTA_DEG;
     public static final ModConfigSpec.DoubleValue DRIFT_MAX_STRENGTH_DELTA;
@@ -152,7 +163,7 @@ public final class AeroWeatherCommonConfig {
                 .defineInRange("referenceAboveSeaLevel", 25.0, 1.0, 4064.0);
         HEIGHT_EXPONENT = builder
                 .comment("Power-law exponent controlling how quickly the multiplier ramps up with height.")
-                .defineInRange("exponent", 0.4, 0.0, 5.0);
+                .defineInRange("exponent", 0.5, 0.0, 5.0);
         HEIGHT_MAX_MULTIPLIER = builder
                 .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
                 .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
@@ -279,6 +290,40 @@ public final class AeroWeatherCommonConfig {
                 .defineListAllowEmpty("biomeWindFactors", List.of(),
                         () -> "minecraft:plains=1.15",
                         entry -> entry instanceof String text && text.indexOf('=') > 0);
+        builder.pop();
+
+        builder.comment(
+                "A second wind layer above cloud level, blowing differently from the wind below it. The two",
+                "are blended across a transition band rather than switching at a line. Only in dimensions",
+                "with a sky (skylight and no ceiling), so not the Nether or the End. Strength in both",
+                "layers still follows the height settings above."
+        ).push("upperWind");
+        UPPER_WIND_ENABLED = builder
+                .comment("Whether there is an upper wind layer at all. Off gives one layer of wind all the way up.")
+                .define("upperWindEnabled", true);
+        UPPER_WIND_MODE = builder
+                .comment(
+                        "SIMPLE: above the layer the wind blows the opposite way, and dies away to nothing where the layers meet.",
+                        "COMPLEX: above the layer the wind follows a flow map of its own, turned from the surface wind by an angle that wanders over time (the offset and walk settings below).")
+                .defineEnum("upperWindMode", UpperWindMode.COMPLEX);
+        UPPER_WIND_LAYER_HEIGHT = builder
+                .comment("The Y level where the two layers meet: the middle of the transition band. 192 is vanilla's cloud height.")
+                .defineInRange("upperWindLayerHeight", 170.0, -64.0, 4064.0);
+        UPPER_WIND_TRANSITION_BLOCKS = builder
+                .comment("How tall the band is that the two layers blend across, centred on the layer height. 0 switches abruptly at the layer height.")
+                .defineInRange("upperWindTransitionBlocks", 32.0, 0.0, 512.0);
+        UPPER_WIND_OFFSET_DEGREES = builder
+                .comment("COMPLEX only: how far, in degrees clockwise, the upper layer's wind is turned from the wind below before the walk is added.")
+                .defineInRange("upperWindOffsetDegrees", 90.0, -180.0, 180.0);
+        UPPER_WIND_OFFSET_WALK_MIN_DEGREES = builder
+                .comment("COMPLEX only: the lowest the slowly wandering walk adds to the offset. With the defaults the total turn wanders between 60 and 180 degrees.")
+                .defineInRange("upperWindOffsetWalkMinDegrees", -30.0, -180.0, 180.0);
+        UPPER_WIND_OFFSET_WALK_MAX_DEGREES = builder
+                .comment("COMPLEX only: the highest the walk adds to the offset. Set it equal to the minimum to hold the offset still.")
+                .defineInRange("upperWindOffsetWalkMaxDegrees", 90.0, -180.0, 180.0);
+        UPPER_WIND_OFFSET_WALK_PERIOD_SECONDS = builder
+                .comment("COMPLEX only: roughly how many seconds the walk takes to wander from one point in its range to a new one. Larger values turn the upper wind more slowly.")
+                .defineInRange("upperWindOffsetWalkPeriodSeconds", 600, 10, 86400);
         builder.pop();
 
         SPEC = builder.build();

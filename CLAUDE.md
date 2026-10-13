@@ -106,15 +106,20 @@ item/
 
 config/
   AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, per-weather strength bands, sync thresholds,
-                                       aeronautics force, windmill, wind vane and breeze maker tuning
+                                       aeronautics force, windmill, wind vane and breeze maker tuning, upper wind layer
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption
-                                       gating, Particle Rain angles, wind sound layers
+                                       gating, Particle Rain angles, wind sound layers, cloud speed
 
 wind/
   WindDirection.java                  cardinal enum (StringRepresentable, backs WIND_FROM) + degree/vector helpers;
                                        travelVector(bearingDeg) -> Vec3, and its inverse bearingOf(Vec3)
   LocalWind.java                      wind as seen from one block's own grid, both sides, Sable-ship aware; shared
-                                       by the wind vane and Create windmills (see M10)
+                                       by the wind vane and Create windmills (see M10); built on WorldWind
+  WorldWind.java                      the wind at any (x, y, z) in world space: flow map, height scaling and the upper
+                                       layer combined; every positional reader goes through it (see M17)
+  UpperWindLayer.java                 the layer above the clouds: where it applies, its blend weight at a Y, the
+                                       complex mode's own flow map and its time-walked offset (see M17)
+  UpperWindMode.java                  enum SIMPLE / COMPLEX, backing the upperWindMode config value
   WindmillWindResponse.java           pure function: (facing, wind, strength) -> quantized Create windmill speed multiplier
   WindState.java                      direction + normalized strength walk within a per-weather band + gust + override
                                        (timed or not); NBT I/O
@@ -142,6 +147,8 @@ network/
 client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
+  CloudWind.java                      ClientTickEvent.Post: integrates the clouds' offset from the wind at cloud height;
+                                       read by both cloud mixins (see M18)
   ClientActiveWindmills.java          client-side set of Create windmills the wind is currently turning; self-reported
                                        by the windmill mixin (no networking), keyed by bearing position but located at
                                        its world position (ship-aware); entries age out after 20 ticks
@@ -210,7 +217,7 @@ integration/
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
                                        LoadingModList says that mod is installed ("create", "particlerain", "simulated",
-                                       "mc2_interactivefoliage")
+                                       "mc2_interactivefoliage", "sodium")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
@@ -226,6 +233,9 @@ mixin/
                                        its six plate-still-there checks accept it (see M13)
   WindBearingPlateParentMixin.java    on their SwivelBearingPlateBlockEntity: breaking a wind bearing's plate breaks
                                        the wind bearing, as it does a swivel bearing
+  LevelRendererCloudsMixin.java       vanilla renderClouds: drift constant to 0, camera X/Z shifted by CloudWind (M18);
+                                       the only mixin in the JSON's "client" list, since its target always exists
+  SodiumCloudsMixin.java              the same two changes in Sodium's CloudRenderer.render, by string target (M18)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -331,13 +341,13 @@ speed is clamped to 0.
 - Elevation scaling (`wind/WindHeightScaling.java`, a standalone pure
   function): approximates the real-world wind profile power law, reaching
   base strength at a configurable reference height
-  (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.4), capped
+  (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.5), capped
   at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 3x).
   - **At sea level the multiplier is `HEIGHT_SEA_LEVEL_MULTIPLIER` (default 0.5), not
     0**: `max(powerLaw, seaLevelMultiplier)`. A pure power law is 0 at sea level,
     which made beaches and open ocean dead calm. It's a floor, not a blend, so the
-    tuned curve is untouched above the crossover (~4.4 blocks up at defaults:
-    `25 × 0.5^(1/0.4)`); a blend would have weakened wind at every altitude. 0
+    tuned curve is untouched above the crossover (~6.25 blocks up at defaults:
+    `25 × 0.5^(1/0.5)`); a blend would have weakened wind at every altitude. 0
     restores the pure power law.
   - **Below sea level there's no wind at all** — but "below" starts one block
     under it (`SURFACE_MARGIN`). Sea level is the top of the water, so the top
@@ -1407,6 +1417,9 @@ cached travel vector is *rotated* by the offset rather than rebuilt, since
 (sampled at the camera so a held vane agrees with a placed one) and
 `/aeroweather wind info`, which now reports the local value as well as the base.
 
+M17 then moved the field and height scaling behind `WorldWind.at`, so each of these
+reads one call instead of combining the two itself — see M17.
+
 ## M15: Wind sounds
 
 Two looping ambience layers whose volume follows the wind **where the player is
@@ -1667,12 +1680,145 @@ Four layers, all matching Particle Rain (M12):
 **Licence** is inconsistent (Modrinth ARR, mods.toml CC-BY-NC-SA-4.0, GitHub MIT).
 Nothing of IF's is copied or shipped: the shader text is patched in memory at load.
 
+## M17: Upper wind layer
+
+A second layer of wind above cloud level, blowing differently from the wind below, with
+the two **blended** across a transition band rather than switching at a line.
+`upperWindEnabled` (default **true**) turns it off; `upperWindMode` picks how the upper
+layer blows (default `COMPLEX`). All of it is common config, in the `upperWind` section.
+
+- **Where:** a band `upperWindTransitionBlocks` tall (default 32) centred on
+  `upperWindLayerHeight` (default 192, vanilla's cloud height). Absolute Y, not relative to
+  sea level, because clouds are. It's config rather than read from the game because
+  `DimensionSpecialEffects.getCloudHeight()` is client-only and the server needs the layer
+  too (airship force, windmills, the brass vane's signal).
+- **Only in dimensions with a sky** — `hasSkyLight() && !hasCeiling()`. Without that, a
+  player standing above the Nether roof (which goes to 256) would get reversed wind.
+- **SIMPLE:** the upper layer is the wind below, reversed: same flow map, same biome
+  factor, same height scaling, plus 180°.
+- **COMPLEX:** the upper layer has a flow map of its own: `FlowNoise` with a salted copy of
+  the synced flow seed, at the same scale, direction deviation and strength variation as
+  M14's. It's turned from the wind below by `upperWindOffsetDegrees` (default 90) plus a
+  walk between `upperWindOffsetWalkMinDegrees`/`MaxDegrees` (defaults −30/+90, so the
+  total wanders over 60–180°). **No biome factor up there**, since the ground is too far
+  below to matter; height scaling still applies.
+
+### Blending is a vector lerp
+
+Across the band each layer is taken as a vector, `travelVector(direction) × height-scaled
+strength`, and the two are interpolated by `smoothstep` over the band. That one rule gives
+both modes what they need:
+- in SIMPLE, a vector blended into its own reverse is `(1 − 2t)·v`: it falls to **exactly
+  0** at the layer height, the direction flips there, and strength is back on the height
+  curve at both edges of the band. Above, it keeps following `WindHeightScaling` as before;
+- in COMPLEX the flow maps cross-fade, with a dip only as deep as the two directions
+  disagree: none at 0°, about 29% at 90°, total at 180°. That's real wind shear between air
+  masses.
+
+Checked offline against the compiled classes: with the defaults (base 40, sea level 63)
+strength follows the height formula exactly at y ≤ 176 and y ≥ 208, falls to exactly 0.00 at
+192, and never changes by more than 2.1 per quarter block in between. When the layers
+cancel completely the bearing is taken from whichever side is nearer, so a vane at the
+meeting point doesn't spin to an arbitrary heading.
+
+### The walk needs no state
+
+The offset is 1D value noise over game time (`FlowNoise.sampleCoarse(t, 0, salted seed)`,
+one lattice step per `upperWindOffsetWalkPeriodSeconds`, default 600), mapped onto
+[min, max]. A stepped random walk would have had to live in `WindState` and be synced;
+this is a function of game time and the already-synced flow seed, so both sides arrive at
+the same angle on their own, as M14's flow map does, and it survives restarts for free.
+The client's game time ticks forward between the server's time syncs, so the two clocks
+agree to within a tick or so, and the walk moves under 0.3°/s at the defaults. Measured over
+200 periods: it reaches −29.9 and +89.8, so both ends are actually visited, though it
+spends more time mid-range, as value noise does.
+
+COMPLEX waits for the flow seed (`BiomeWindFactors.isReady()`), as `WindField` does:
+until the biome table arrives, a client would otherwise turn the upper wind with a seed
+of 0.
+
+### One function for every reader
+
+`WorldWind.at(level, x, y, z, baseDirection, baseStrength)` now does the flow map, height
+scaling and upper layer in one place. `LocalWind`, `WindParticleSpawner`,
+`AmbientWindDrift`, `AeronauticsWindForceApplier`, `WindVaneItemRenderer` and
+`/aeroweather wind info` each used to combine `WindField.at` and `WindHeightScaling.scale`
+by hand; all now call it. Below the band it computes exactly the old expressions, so
+nothing beneath the clouds changes. `ParticleRainWind` keeps its fast path (cached base,
+rotated travel vector): it caches `UpperWindLayer.lowestAffectedY` once a tick and only
+sends particles above that through `WorldWind`.
+
+`/aeroweather wind info` adds a line for the upper layer in a dimension where it's active:
+the layer height, and in COMPLEX the current offset.
+
+## M18: Clouds follow the wind
+
+Clouds drift with the wind at cloud height instead of vanilla's fixed drift, a visual
+indicator of what the upper layer (M17) is doing. Client only: `cloudWindEnabled`
+(default true), `cloudSpeedAtFullStrength` (default 2.4 blocks/s at strength 100,
+linear in strength, so still air holds them still; vanilla's drift is 0.6) and
+`cloudSmoothingSeconds` (default 3) in the client config's `clouds` section.
+
+### How vanilla moves clouds, and how we do instead
+
+Vanilla's clouds have no direction. `LevelRenderer.renderClouds` looks the cloud
+texture up at `(cameraX + (ticks + partialTick) * 0.03) / 12` and `cameraZ / 12 + 0.33`
+(read from the 1.21.1 bytecode), so they drift west at 0.6 blocks/s forever. The `0.03`
+is the entire motion. `LevelRendererCloudsMixin` therefore:
+- `@ModifyConstant`s the `0.03F` (the only one in the method) to 0;
+- `@ModifyVariable`s the `camX`/`camZ` arguments (double ordinals 0 and 2) to
+  `camera − offset`, at the `getCloudHeight()` call rather than at HEAD. The same
+  arguments are first passed to NeoForge's `DimensionSpecialEffects.renderClouds` hook,
+  which lets a modded dimension draw its own clouds, and that should see the real camera.
+
+**Sodium replaces the whole thing.** Its `LevelRendererMixin` cancels `renderClouds` at
+HEAD and calls `CloudRenderer.render(Camera, ClientLevel, Matrix4f, PoseStack, float
+ticks, float partialTick)`, which does the same sum on its own:
+`camera.getPosition().x() + (ticks + partialTick) * 0.03F` and `.z() + 0.33`. So
+`SodiumCloudsMixin` makes the same two changes there: the `0.03F` (one in `render`), and
+`@ModifyExpressionValue` on the `Vec3.x()`/`Vec3.z()` calls, which are `render`'s only
+ones. Its later fog check reads the camera's `x`/`y`/`z` *fields* directly, so it's
+unaffected. Verified against `sodium-neoforge-0.8.13+mc1.21.1` (Modrinth `uMOpc5uV`).
+String target, `remap = false`, `require = 0`, withheld by the plugin unless `sodium` is
+loaded, the same terms as M9/M12/M16. Embeddium and shaderpacks with their own volumetric
+clouds aren't covered; Iris packs that shade Sodium's or vanilla's cloud geometry are.
+
+### The offset
+
+`client/CloudWind` integrates it once a client tick: the wind via `WorldWind.at` at the
+camera's XZ and `level.effects().getCloudHeight()`, times the speed setting, as a
+blocks-per-tick velocity, integrated trapezoidally. The first reading snaps.
+
+**The velocity follows the wind through a critically damped spring**, not a first-order
+ease. The synced wind moves in small steps (a sync per 2° or 1 strength, about once a
+second), and at cloud height the layers partly cancel, which magnifies them. The first
+version eased 5% a tick, which answers each step with an instant change of acceleration;
+live, the clouds read as jittery. Unity's `SmoothDamp` (per axis, one tick at a time, its
+polynomial `exp` stand-in, stable at any step) keeps acceleration continuous too, settling
+without overshoot in about `cloudSmoothingSeconds` (client config, default 3; 0 snaps).
+Simulated on a once-a-second step train: the worst tick-to-tick jump in acceleration fell
+from 0.0002 to 0.000005 blocks/tick², about 40x, with no overshoot. Previous and current offsets are interpolated by partial tick when drawn,
+so it's smooth at any frame rate, and it's wrapped at 24,576 blocks (vanilla's own 2048-cell
+wrap, a whole number of repeats of any cloud texture up to 2048 px wide) without
+disturbing the interpolation. Nothing moves while paused, as in vanilla.
+
+**Inactive means vanilla clouds, not frozen ones:** when the option is off, or no wind
+has synced for the dimension (a server without AeroWeather), both mixins pass the
+original values through. Switching between the two (joining, changing dimension) makes
+the clouds jump once.
+
+**Sampled at the cloud height, which by default is also the layer height.** Clouds sit at
+192, and so does `upperWindLayerHeight`, the middle of M17's transition band. In COMPLEX
+(the default) the clouds therefore show an even mix of the two layers. In SIMPLE the
+layers cancel exactly there, so the clouds hold still; lower `upperWindLayerHeight` to
+put the clouds in the upper layer proper.
+
 ## Command reference
 
 ```
 /aeroweather wind <direction> <strength>   set wind (direction: cardinal keyword like "north"/"ne", or a degree float)
 /aeroweather wind reset                    resume natural simulation
-/aeroweather wind info                     report direction/strength (base and elevation-adjusted at the command source's position) and whether it's natural, an operator override, or a breeze (with its time left)
+/aeroweather wind info                     report direction/strength (base and elevation-adjusted at the command source's position) and whether it's natural, an operator override, or a breeze (with its time left); plus the upper layer's height and current offset where it's active
 ```
 
 Requires operator permission (level 2). `<strength>` is clamped 0–100.
@@ -1716,6 +1862,10 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   `particlerain` is absent. Its helper,
   `integration/particlerain/ParticleRainWind`, contains no Particle Rain
   references at all and is always safe to classload.
+- **Sixth sanctioned exception (M18)**: `mixin/SodiumCloudsMixin` targets Sodium's
+  `CloudRenderer` on the same terms as M9, M12 and M16 — a string target, Minecraft-only
+  descriptors, withheld by `AeroWeatherMixinPlugin` when `sodium` is absent. Its helper,
+  `client/CloudWind`, contains no Sodium references at all.
 - **Fifth sanctioned exception (M16)**: the three `InteractiveFoliage*Mixin`s target
   Interactive Foliage classes on the same terms as M9 and M12 — string targets and
   descriptors only, never a type, withheld by `AeroWeatherMixinPlugin` when
@@ -1859,6 +2009,19 @@ mixins, nothing bundled, and `mods.toml` declaring it optional. **Not verified:*
 the patched GLSL compiles (no `glslangValidator` was available), and all three render
 pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on them.
 
+**M17 (the upper wind layer, see its section) is written and compile-verified, but not yet
+live-tested.** Verified offline against the compiled classes: the band's blend weights, the
+simple mode's dip to exactly 0 and its return to the height curve, the complex blend's dip
+by angle, and the walk's range, rate and determinism. Not confirmed yet: how either mode
+looks and feels in game (particles, sound, vane, airships crossing the band), that client
+and server agree on the complex offset in multiplayer, and the default band width.
+
+**M18 (clouds follow the wind, see its section) is written and compile-verified, but not yet
+live-tested.** Verified statically: each injection target's bytecode, in vanilla 1.21.1's
+`renderClouds` and Sodium 0.8.13's `CloudRenderer.render`, and that each hooked constant and
+call appears exactly once. Not confirmed yet: that the clouds actually move with the wind in
+game, under vanilla and under Sodium, and whether 2.4 blocks/s at strength 100 reads well.
+
 ## External references
 
 - Create: real modId `create`. Modrinth project `create` (id
@@ -1990,6 +2153,10 @@ pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on t
 - SWAY: https://github.com/RazorPlay01/SWAY. Real modId `sway`, Modrinth `sway` (id
   `Gj6Yce3v`), pinned to `2.4.5-neoforge+1.21.1` (`uGTq42kW`). On our dev runtime only
   because IF needs it; AeroWeather never touches it.
+- Sodium: https://github.com/CaffeineMC/sodium. Real modId `sodium`, Modrinth `sodium` (id
+  `AANobbMI`). Not on the dev runtime; M18's mixin was written against
+  `mc1.21.1-0.8.13-neoforge` (`uMOpc5uV`), whose jar nests the mod under
+  `META-INF/jarjar/`. Its cloud renderer is `client.render.immediate.CloudRenderer`.
 - Modrinth Maven: `https://api.modrinth.com/maven` (wired via
   `exclusiveContent`/`includeGroup "maven.modrinth"`), coordinates
   `maven.modrinth:<slug>:<version id>`, pinned in `gradle.properties`.

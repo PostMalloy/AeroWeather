@@ -7,7 +7,9 @@ import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.wind.WindDirection;
 import com.postmalloy.aeroweather.wind.WindField;
+import com.postmalloy.aeroweather.wind.UpperWindLayer;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
+import com.postmalloy.aeroweather.wind.WorldWind;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -68,7 +70,9 @@ public final class ParticleRainWind {
     private static boolean cachedActive;
     private static double cachedTravelX;
     private static double cachedTravelZ;
+    private static float cachedBaseDirectionDeg;
     private static float cachedBaseStrength;
+    private static double cachedUpperLayerFloor;
     private static double cachedMagnitudePerStrength;
     private static double cachedMinimumMagnitude;
     private static double cachedSeaLevel;
@@ -95,6 +99,16 @@ public final class ParticleRainWind {
         refreshCache(level);
         if (!cachedActive) {
             return null;
+        }
+
+        // In or above the upper layer's transition band, take the general path: the layers'
+        // blend needs the full direction and strength there, not just a rotation of the base.
+        // Rain rarely falls up there, so the fast path below keeps the cost where it was.
+        if (y > cachedUpperLayerFloor) {
+            WorldWind.Sample wind = WorldWind.at(level, x, y, z, cachedBaseDirectionDeg, cachedBaseStrength);
+            double magnitude = Math.max(cachedMagnitudePerStrength * wind.strength(), cachedMinimumMagnitude);
+            Vec3 travel = WindDirection.travelVector(wind.directionDeg());
+            return new Vector3f((float) (travel.x * magnitude), 0.0f, (float) (travel.z * magnitude));
         }
 
         // The only part that varies per particle. Everything else above is cached for the
@@ -147,7 +161,9 @@ public final class ParticleRainWind {
         Vec3 travel = WindDirection.travelVector(ClientWindState.directionDeg());
         cachedTravelX = travel.x;
         cachedTravelZ = travel.z;
+        cachedBaseDirectionDeg = ClientWindState.directionDeg();
         cachedBaseStrength = ClientWindState.strength();
+        cachedUpperLayerFloor = UpperWindLayer.lowestAffectedY(level);
 
         cachedSeaLevel = level.getSeaLevel();
         cachedReferenceHeight = AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble();

@@ -5,7 +5,9 @@
   "plugin": "com.postmalloy.aeroweather.mixin.AeroWeatherMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
-  "client": [],
+  "client": [
+    "LevelRendererCloudsMixin"
+  ],
   "server": [],
   "injectors": {
     "defaultRequire": 1

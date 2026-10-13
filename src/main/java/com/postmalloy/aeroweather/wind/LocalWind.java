@@ -3,7 +3,6 @@ package com.postmalloy.aeroweather.wind;
 import org.jetbrains.annotations.Nullable;
 
 import com.postmalloy.aeroweather.client.ClientWindState;
-import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.integration.aeronautics.SubLevelFrames;
 
 import net.minecraft.core.BlockPos;
@@ -21,13 +20,13 @@ import net.minecraft.world.phys.Vec3;
  * (redstone signal, windmill kinetics), and the client its synced
  * {@link ClientWindState} cache (vane animation, windmill sail visuals).
  * <p>
- * For an ordinary world block this is exactly the computation windmills have
- * always used: {@link WindHeightScaling} at the block's own Y, and the raw
- * bearing. For a block riding a Sable sub-level (see {@link SubLevelFrames}),
- * three things change, because such a block sits at far-away plot coordinates
- * inside a frame the sub-level can rotate freely:
+ * For an ordinary world block this is just {@link WorldWind} at the block: the
+ * flow map, height scaling at its own Y, and the upper layer. For a block riding
+ * a Sable sub-level (see {@link SubLevelFrames}), three things change, because
+ * such a block sits at far-away plot coordinates inside a frame the sub-level can
+ * rotate freely:
  * <ul>
- *   <li>strength is height-scaled at the block's <em>world</em> Y, not its plot Y;</li>
+ *   <li>the wind is sampled at the block's <em>world</em> position, not its plot position;</li>
  *   <li>the bearing is re-expressed in the sub-level's own frame, so it compares
  *       correctly against the block's own facing and neighbours;</li>
  *   <li>strength is scaled by how much of the wind lies in the sub-level's
@@ -68,31 +67,22 @@ public final class LocalWind {
         SubLevelFrames.LocalFrame frame = SubLevelFrames.get().frameAt(level, pos);
 
         // Where this block actually stands, which is not its BlockPos on a ship: a
-        // sub-level's blocks live at far-away plot coordinates whose biome means
-        // nothing. Sample the field where the ship is, not where its storage is.
-        Vec3 fieldPosition = frame == null ? Vec3.atCenterOf(pos) : frame.worldPosition();
-        WindField.Sample field = WindField.at(level, fieldPosition.x, fieldPosition.z);
-        directionDeg = WindDirection.normalizeDegrees(directionDeg + field.directionOffsetDeg());
-        baseStrength *= field.strengthFactor();
+        // sub-level's blocks live at far-away plot coordinates whose biome and altitude
+        // mean nothing. Sample the wind where the ship is, not where its storage is.
+        // A world block keeps its integer Y, as windmills always have.
+        Vec3 position = frame == null ? Vec3.atCenterOf(pos) : frame.worldPosition();
+        double y = frame == null ? pos.getY() : position.y;
+        WorldWind.Sample world = WorldWind.at(level, position.x, y, position.z, directionDeg, baseStrength);
 
         if (frame == null) {
-            return new Sample(directionDeg, heightScaled(level, baseStrength, pos.getY()));
+            return new Sample(world.directionDeg(), world.strength());
         }
 
-        float adjustedStrength = heightScaled(level, baseStrength, frame.worldPosition().y);
-        Vec3 localFrom = frame.worldToLocalDirection().apply(WindDirection.travelVector(directionDeg).reverse());
+        Vec3 localFrom = frame.worldToLocalDirection().apply(WindDirection.travelVector(world.directionDeg()).reverse());
         double length = localFrom.length();
         double horizontalShare = length < 1.0E-9
                 ? 0.0
                 : Math.sqrt(localFrom.x * localFrom.x + localFrom.z * localFrom.z) / length;
-        return new Sample(WindDirection.bearingOf(localFrom), (float) (adjustedStrength * horizontalShare));
-    }
-
-    private static float heightScaled(Level level, float baseStrength, double y) {
-        return WindHeightScaling.scale(baseStrength, y, level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
+        return new Sample(WindDirection.bearingOf(localFrom), (float) (world.strength() * horizontalShare));
     }
 }

@@ -14,10 +14,9 @@ import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.network.payload.ClientboundActiveContraptionsPayload;
 import com.postmalloy.aeroweather.wind.WindDirection;
-import com.postmalloy.aeroweather.wind.WindField;
-import com.postmalloy.aeroweather.wind.WindHeightScaling;
 import com.postmalloy.aeroweather.wind.WindSavedData;
 import com.postmalloy.aeroweather.wind.WindState;
+import com.postmalloy.aeroweather.wind.WorldWind;
 
 import dev.ryanhcode.sable.api.physics.force.ForceGroup;
 import dev.ryanhcode.sable.api.physics.force.ForceGroups;
@@ -322,19 +321,13 @@ public final class AeronauticsWindForceApplier implements WindForceApplier, SubL
                 new Vec3(applicationPoint.x(), applicationPoint.y(), applicationPoint.z()));
         // Per contraption, not per level: the hoisted `wind` above is the dimension's base
         // value, and two airships far apart sit in different parts of the flow field.
-        WindField.Sample field = WindField.at(level, comWorld.x, comWorld.z);
-
-        float adjustedStrength = WindHeightScaling.scale(wind.strength() * field.strengthFactor(), comWorld.y, level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
+        WorldWind.Sample local = WorldWind.at(level, comWorld.x, comWorld.y, comWorld.z, wind.directionDeg(), wind.strength());
+        float adjustedStrength = local.strength();
         if (adjustedStrength <= 0.0f) {
             return;
         }
 
-        Vec3 worldWindDirection = WindDirection.travelVector(
-                WindDirection.normalizeDegrees(wind.directionDeg() + field.directionOffsetDeg()));
+        Vec3 worldWindDirection = WindDirection.travelVector(local.directionDeg());
         Vec3 localDir = pose.transformNormalInverse(worldWindDirection);
         double localLength = localDir.length();
         if (localLength < 1.0E-6) {

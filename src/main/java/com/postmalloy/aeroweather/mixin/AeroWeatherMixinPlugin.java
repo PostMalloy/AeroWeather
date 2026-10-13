@@ -45,6 +45,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     private static final List<String> INTERACTIVE_FOLIAGE_MIXINS =
             List.of("InteractiveFoliageWindMixin", "InteractiveFoliageSwayShaderMixin",
                     "InteractiveFoliageLegacyShaderMixin");
+    /** Sodium replaces vanilla's cloud renderer with its own, so clouds following the wind needs a hook there too. */
+    private static final String SODIUM_MODID = "sodium";
+    private static final String SODIUM_CLOUDS_MIXIN = "SodiumCloudsMixin";
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -66,7 +69,7 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        List<String> mixins = new ArrayList<>(9);
+        List<String> mixins = new ArrayList<>(10);
         if (isLoaded(CREATE_MODID)) {
             mixins.add(WINDMILL_MIXIN);
         }
@@ -78,6 +81,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
         }
         if (isLoaded(INTERACTIVE_FOLIAGE_MODID)) {
             mixins.addAll(INTERACTIVE_FOLIAGE_MIXINS);
+        }
+        if (isLoaded(SODIUM_MODID)) {
+            mixins.add(SODIUM_CLOUDS_MIXIN);
         }
         return mixins;
     }

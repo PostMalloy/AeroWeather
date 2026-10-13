@@ -47,6 +47,10 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_REFERENCE_STRENGTH;
     public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES;
 
+    public static final ModConfigSpec.BooleanValue CLOUD_WIND_ENABLED;
+    public static final ModConfigSpec.DoubleValue CLOUD_SPEED_AT_FULL_STRENGTH;
+    public static final ModConfigSpec.DoubleValue CLOUD_SMOOTHING_SECONDS;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -169,6 +173,21 @@ public final class AeroWeatherClientConfig {
         WIND_SOUND_FADE_RATE = builder
                 .comment("How quickly volume chases the wind, as a fraction of the remaining difference per tick. 0.02 takes a couple of seconds to settle; higher is snappier, lower is more gradual.")
                 .defineInRange("windSoundFadeRate", 0.02, 0.001, 1.0);
+        builder.pop();
+
+        builder.comment(
+                "Clouds drift with the wind at cloud height instead of vanilla's fixed slow drift west, so",
+                "they show what the upper wind is doing. Works with vanilla's cloud renderer and Sodium's."
+        ).push("clouds");
+        CLOUD_WIND_ENABLED = builder
+                .comment("Whether clouds follow the wind. Off, or on a server without AeroWeather, they drift as in vanilla.")
+                .define("cloudWindEnabled", true);
+        CLOUD_SPEED_AT_FULL_STRENGTH = builder
+                .comment("How fast clouds move, in blocks per second, when the wind at cloud height is at strength 100; slower in lighter wind, still in calm air. Vanilla's drift is 0.6.")
+                .defineInRange("cloudSpeedAtFullStrength", 2.4, 0.0, 50.0);
+        CLOUD_SMOOTHING_SECONDS = builder
+                .comment("Roughly how many seconds the clouds take to settle onto a change in the wind. Higher is smoother and slower to respond; 0 follows every change at once.")
+                .defineInRange("cloudSmoothingSeconds", 3.0, 0.0, 30.0);
         builder.pop();
 
         SPEC = builder.build();

@@ -13,7 +13,7 @@ package com.postmalloy.aeroweather.wind;
  * The pure power law is 0 at sea level, which isn't how real wind behaves:
  * a beach or a boat on open water is windy, just less so than a hilltop.
  * Taking the larger of the two leaves the curve above the crossover (about
- * 4 blocks up at the defaults) exactly as tuned, whereas blending would
+ * 6 blocks up at the defaults) exactly as tuned, whereas blending would
  * weaken the wind at every altitude.
  * <p>
  * Pure math, kept separate from any config class so it's reusable

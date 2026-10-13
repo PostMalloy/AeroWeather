@@ -5,11 +5,10 @@ import com.postmalloy.aeroweather.client.ClientActiveContraptions;
 import com.postmalloy.aeroweather.client.ClientActiveWindmills;
 import com.postmalloy.aeroweather.client.ClientWindState;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
-import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
 import com.postmalloy.aeroweather.registry.AeroWeatherParticles;
 import com.postmalloy.aeroweather.wind.WindDirection;
-import com.postmalloy.aeroweather.wind.WindField;
 import com.postmalloy.aeroweather.wind.WindHeightScaling;
+import com.postmalloy.aeroweather.wind.WorldWind;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -97,15 +96,10 @@ public final class WindParticleSpawner {
 
         // One sample per tick at the player, shared by every particle spawned this tick -
         // they all appear within a few blocks of each other, so the field barely differs.
-        WindField.Sample field = WindField.at(level, player.getX(), player.getZ());
-        float directionDeg = WindDirection.normalizeDegrees(
-                ClientWindState.directionDeg() + field.directionOffsetDeg());
-
-        float strength = WindHeightScaling.scale(baseStrength * field.strengthFactor(), player.getY(), level.getSeaLevel(),
-                AeroWeatherCommonConfig.HEIGHT_REFERENCE_ABOVE_SEA_LEVEL.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_EXPONENT.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_MAX_MULTIPLIER.getAsDouble(),
-                AeroWeatherCommonConfig.HEIGHT_SEA_LEVEL_MULTIPLIER.getAsDouble());
+        WorldWind.Sample wind = WorldWind.at(level, player.getX(), player.getY(), player.getZ(),
+                ClientWindState.directionDeg(), baseStrength);
+        float directionDeg = wind.directionDeg();
+        float strength = wind.strength();
         if (strength <= 0.0F) {
             return;
         }
