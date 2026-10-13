@@ -105,10 +105,12 @@ item/
                                        timed wind override (a breeze) blowing the way the player faces (see M11)
 
 config/
-  AeroWeatherCommonConfig.java        drift rate, gust chance/magnitude, per-weather strength bands, sync thresholds,
-                                       aeronautics force, windmill, wind vane and breeze maker tuning, upper wind layer
+  AeroWeatherCommonConfig.java        two menus, wind (drift, gust, weather, height, biomeWind, upperWind) and
+                                       itemsAndBlocks (windVane, windBearing, breezeMaker), plus aeronautics and windmills
+  ConfigMigration.java                runs before each registerConfig: moves an older flat file's sections to their
+                                       nested paths, so NeoForge doesn't reset them; one move table per file
   AeroWeatherClientConfig.java        particle toggle, max count, spawn radius, outdoors-only flag, active-contraption
-                                       gating, Particle Rain angles, wind sound layers, cloud speed
+                                       gating, wind sound layers, cloud speed; compat (Particle Rain, Interactive Foliage)
 
 wind/
   WindDirection.java                  cardinal enum (StringRepresentable, backs WIND_FROM) + degree/vector helpers;
@@ -247,6 +249,24 @@ every `push(...)` section and `define*(...)` leaf across both config
 classes needs a matching flat `en_us.json` entry, and a leaf's key must
 stay unique mod-wide (section context isn't part of its lookup).
 
+**Menus and their hover text.** Every `push(...)` becomes a menu button, nested pushes
+become sub-menus, and they're listed in the order they're pushed. A button's hover text is
+the `<modid>.configuration.<key>.tooltip` lang entry if there is one, otherwise the push's
+comment. Sections all have a one-line `.tooltip`, so the menus stay short while the TOML
+file keeps each section's full comment; leaf settings have no `.tooltip` and show their
+full comment (plus range), on purpose. Keep both when adding a section.
+
+**Moving a section moves its TOML path**, and NeoForge resets whatever it can't find at
+its current path to the default (after backing the file up). Regrouping the common file
+into `wind`/`itemsAndBlocks` would have reset every setting in the nine moved sections of
+an existing file, every tuned biome factor included, and moving the client file's
+`particleRain`/`interactiveFoliage` under `compat` the same for those two. `ConfigMigration`
+moves them first, with NightConfig, from the mod constructors (`common()` in `AeroWeather`,
+`client()` in `AeroWeatherClient`; both configs load later in mod loading). Checked against
+real old-layout files: all 49 common and all 35 client values carried, after which
+NeoForge's own `ModConfigSpec.correct` makes 0 value corrections, only rewriting section
+comments. A future move needs an entry in that file's `Layout`.
+
 Particle textures live at
 `assets/aeroweather/textures/particle/windparticle{1-8}.png` (declared
 in `wind_streak.json`), `gustparticle{1-8}.png` (declared in
@@ -382,7 +402,9 @@ speed is clamped to 0.
 - Server→client sync (`CustomPacketPayload` via `RegisterPayloadHandlersEvent`):
   immediate on player join/dimension-change/respawn and command
   overrides; otherwise only on a delta threshold (direction Δ > 2°,
-  strength Δ ≥ 1) or a ~5s heartbeat — never every tick.
+  strength Δ ≥ 1) or a ~5s heartbeat — never every tick. Those three are constants in
+  `WindSync`; they were config (the menu's "Server Settings") until nobody had a reason to
+  tune them.
 
 ## Ambient particle wind
 

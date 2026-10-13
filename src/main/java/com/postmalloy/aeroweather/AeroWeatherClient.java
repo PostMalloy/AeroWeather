@@ -1,6 +1,7 @@
 package com.postmalloy.aeroweather;
 
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
+import com.postmalloy.aeroweather.config.ConfigMigration;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModContainer;
@@ -13,7 +14,9 @@ import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 @Mod(value = AeroWeather.MODID, dist = Dist.CLIENT)
 public class AeroWeatherClient {
     public AeroWeatherClient(ModContainer container) {
-        // Register our client-only ModConfigSpec (particle tunables) so FML creates and loads it
+        // Register our client-only ModConfigSpec so FML creates and loads it, first moving an
+        // older file's sections to where the current layout keeps them
+        ConfigMigration.client();
         container.registerConfig(ModConfig.Type.CLIENT, AeroWeatherClientConfig.SPEC);
 
         // Allows NeoForge to create a config screen for this mod's configs.

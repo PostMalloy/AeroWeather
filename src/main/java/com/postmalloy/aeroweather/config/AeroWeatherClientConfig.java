@@ -3,8 +3,10 @@ package com.postmalloy.aeroweather.config;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Client-only wind particle tunables. Loaded as {@code ModConfig.Type.CLIENT},
- * so it's per-player, not shipped with the world/server. See
+ * Client-only tunables: particles, sounds, clouds, and under {@code compat} the
+ * Particle Rain and Interactive Foliage integrations. Loaded as
+ * {@code ModConfig.Type.CLIENT}, so it's per-player, not shipped with the world/server.
+ * {@link ConfigMigration} carries older files over to this layout. See
  * {@link com.postmalloy.aeroweather.client.particle.WindParticleSpawner}
  * for how these are consumed — this class only defines the spec.
  */
@@ -103,51 +105,6 @@ public final class AeroWeatherClientConfig {
         builder.pop();
 
         builder.comment(
-                "Wind influence on the Particle Rain mod's weather particles (rain, snow, sandstorm, mist).",
-                "Ignored when that mod isn't installed."
-        ).push("particleRain");
-        PARTICLE_RAIN_ENABLED = builder
-                .comment("Whether AeroWeather's wind drives Particle Rain's particles. When off, Particle Rain uses its own built-in wind instead.")
-                .define("particleRainEnabled", true);
-        PARTICLE_RAIN_ANGLE_DEGREES = builder
-                .comment("How far rain slants from vertical, in degrees, at the reference strength below. Not a maximum: stronger wind keeps steepening the slant, approaching (but never reaching) horizontal. Other particle types keep their own response relative to rain - snow is gentler, sandstorm dust blows nearly sideways.")
-                .defineInRange("particleRainAngleDegrees", 45.0, 0.0, 89.0);
-        PARTICLE_RAIN_REFERENCE_STRENGTH = builder
-                .comment("The elevation-adjusted wind strength (0-100 scale, before elevation scaling can push it higher) at which rain slants by exactly the angle above.")
-                .defineInRange("particleRainReferenceStrength", 100.0, 1.0, 300.0);
-        PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES = builder
-                .comment("Sandstorm dust never slants less than this many degrees from vertical, however calm the wind - blowing sand shouldn't fall straight down like rain. Because Particle Rain gives every type one shared wind, this floor tilts rain slightly too: about 4 degrees in dead calm at the default, which is far less than it sounds. 0 removes the floor.")
-                .defineInRange("particleRainSandMinAngleDegrees", 45.0, 0.0, 89.0);
-        builder.pop();
-
-        builder.comment(
-                "Interactive Foliage integration. Ignored unless Interactive Foliage is installed.",
-                "Our wind decides how far grass leans, and which way, in any weather - not only in rain."
-        ).push("interactiveFoliage");
-        INTERACTIVE_FOLIAGE_ENABLED = builder
-                .comment("Whether AeroWeather's wind drives Interactive Foliage's grass lean. Off hands it back to Interactive Foliage's own rain-only wind.")
-                .define("interactiveFoliageEnabled", true);
-        INTERACTIVE_FOLIAGE_DIRECTION_ENABLED = builder
-                .comment("Whether grass also leans the way our wind blows. Off keeps Interactive Foliage's fixed east wind and only follows our strength. While on, Interactive Foliage's wind shelter behind walls is turned off, since it only knows how to shelter from an east wind.")
-                .define("interactiveFoliageDirectionEnabled", true);
-        INTERACTIVE_FOLIAGE_CALM_SWAY_FULL_STRENGTH = builder
-                .comment("Wind strength at which Interactive Foliage's gentle idle sway reaches full. Below it the sway fades out, so grass stands still in dead calm air. As wind rises further, the lean takes over from the sway.")
-                .defineInRange("interactiveFoliageCalmSwayFullStrength", 20.0, 1.0, 300.0);
-        INTERACTIVE_FOLIAGE_FULL_LEAN_STRENGTH = builder
-                .comment("Wind strength at which grass leans fully. Below it the lean fades toward Interactive Foliage's calm idle sway.")
-                .defineInRange("interactiveFoliageFullLeanStrength", 50.0, 1.0, 300.0);
-        INTERACTIVE_FOLIAGE_STORM_STRENGTH = builder
-                .comment("Wind strength at which grass reaches its storm lean, twice the full lean. Should be above the full-lean strength.")
-                .defineInRange("interactiveFoliageStormStrength", 100.0, 1.0, 300.0);
-        INTERACTIVE_FOLIAGE_EASE_RATE = builder
-                .comment("How quickly the lean and its direction follow the wind, as a fraction of the difference per tick. Higher shows gusts more sharply; lower is smoother.")
-                .defineInRange("interactiveFoliageEaseRate", 0.08, 0.001, 1.0);
-        INTERACTIVE_FOLIAGE_MAX_TURN_RATE = builder
-                .comment("The fastest grass may swing round to a new wind direction, in degrees per second. A full reversal takes at least 180 divided by this. Faster looks snappier but can flicker the gusts at high wind.")
-                .defineInRange("interactiveFoliageMaxTurnRate", 90.0, 1.0, 3600.0);
-        builder.pop();
-
-        builder.comment(
                 "Looping wind ambience. Two layers: a lighter one that fades in first and stays up,",
                 "and a heavier one laid over it in strong wind, so the two blend rather than swap.",
                 "Both follow the wind where you are standing, so biome and altitude both count."
@@ -188,6 +145,53 @@ public final class AeroWeatherClientConfig {
         CLOUD_SMOOTHING_SECONDS = builder
                 .comment("Roughly how many seconds the clouds take to settle onto a change in the wind. Higher is smoother and slower to respond; 0 follows every change at once.")
                 .defineInRange("cloudSmoothingSeconds", 3.0, 0.0, 30.0);
+        builder.pop();
+
+        builder.comment("How AeroWeather's wind drives other mods' effects. Each part only applies when that mod is installed.").push("compat");
+            builder.comment(
+                    "Wind influence on the Particle Rain mod's weather particles (rain, snow, sandstorm, mist).",
+                    "Ignored when that mod isn't installed."
+            ).push("particleRain");
+            PARTICLE_RAIN_ENABLED = builder
+                    .comment("Whether AeroWeather's wind drives Particle Rain's particles. When off, Particle Rain uses its own built-in wind instead.")
+                    .define("particleRainEnabled", true);
+            PARTICLE_RAIN_ANGLE_DEGREES = builder
+                    .comment("How far rain slants from vertical, in degrees, at the reference strength below. Not a maximum: stronger wind keeps steepening the slant, approaching (but never reaching) horizontal. Other particle types keep their own response relative to rain - snow is gentler, sandstorm dust blows nearly sideways.")
+                    .defineInRange("particleRainAngleDegrees", 45.0, 0.0, 89.0);
+            PARTICLE_RAIN_REFERENCE_STRENGTH = builder
+                    .comment("The elevation-adjusted wind strength (0-100 scale, before elevation scaling can push it higher) at which rain slants by exactly the angle above.")
+                    .defineInRange("particleRainReferenceStrength", 100.0, 1.0, 300.0);
+            PARTICLE_RAIN_SAND_MIN_ANGLE_DEGREES = builder
+                    .comment("Sandstorm dust never slants less than this many degrees from vertical, however calm the wind - blowing sand shouldn't fall straight down like rain. Because Particle Rain gives every type one shared wind, this floor tilts rain slightly too: about 4 degrees in dead calm at the default, which is far less than it sounds. 0 removes the floor.")
+                    .defineInRange("particleRainSandMinAngleDegrees", 45.0, 0.0, 89.0);
+            builder.pop();
+
+            builder.comment(
+                    "Interactive Foliage integration. Ignored unless Interactive Foliage is installed.",
+                    "Our wind decides how far grass leans, and which way, in any weather - not only in rain."
+            ).push("interactiveFoliage");
+            INTERACTIVE_FOLIAGE_ENABLED = builder
+                    .comment("Whether AeroWeather's wind drives Interactive Foliage's grass lean. Off hands it back to Interactive Foliage's own rain-only wind.")
+                    .define("interactiveFoliageEnabled", true);
+            INTERACTIVE_FOLIAGE_DIRECTION_ENABLED = builder
+                    .comment("Whether grass also leans the way our wind blows. Off keeps Interactive Foliage's fixed east wind and only follows our strength. While on, Interactive Foliage's wind shelter behind walls is turned off, since it only knows how to shelter from an east wind.")
+                    .define("interactiveFoliageDirectionEnabled", true);
+            INTERACTIVE_FOLIAGE_CALM_SWAY_FULL_STRENGTH = builder
+                    .comment("Wind strength at which Interactive Foliage's gentle idle sway reaches full. Below it the sway fades out, so grass stands still in dead calm air. As wind rises further, the lean takes over from the sway.")
+                    .defineInRange("interactiveFoliageCalmSwayFullStrength", 20.0, 1.0, 300.0);
+            INTERACTIVE_FOLIAGE_FULL_LEAN_STRENGTH = builder
+                    .comment("Wind strength at which grass leans fully. Below it the lean fades toward Interactive Foliage's calm idle sway.")
+                    .defineInRange("interactiveFoliageFullLeanStrength", 50.0, 1.0, 300.0);
+            INTERACTIVE_FOLIAGE_STORM_STRENGTH = builder
+                    .comment("Wind strength at which grass reaches its storm lean, twice the full lean. Should be above the full-lean strength.")
+                    .defineInRange("interactiveFoliageStormStrength", 100.0, 1.0, 300.0);
+            INTERACTIVE_FOLIAGE_EASE_RATE = builder
+                    .comment("How quickly the lean and its direction follow the wind, as a fraction of the difference per tick. Higher shows gusts more sharply; lower is smoother.")
+                    .defineInRange("interactiveFoliageEaseRate", 0.08, 0.001, 1.0);
+            INTERACTIVE_FOLIAGE_MAX_TURN_RATE = builder
+                    .comment("The fastest grass may swing round to a new wind direction, in degrees per second. A full reversal takes at least 180 divided by this. Faster looks snappier but can flicker the gusts at high wind.")
+                    .defineInRange("interactiveFoliageMaxTurnRate", 90.0, 1.0, 3600.0);
+            builder.pop();
         builder.pop();
 
         SPEC = builder.build();

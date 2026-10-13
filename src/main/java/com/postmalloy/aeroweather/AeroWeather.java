@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import com.postmalloy.aeroweather.config.AeroWeatherCommonConfig;
+import com.postmalloy.aeroweather.config.ConfigMigration;
 import com.postmalloy.aeroweather.integration.aeronautics.AeronauticsIntegration;
 import com.postmalloy.aeroweather.integration.simulated.WindBearingIntegration;
 import com.postmalloy.aeroweather.registry.AeroWeatherBlockEntityTypes;
@@ -32,7 +33,9 @@ public class AeroWeather {
     // The constructor for the mod class is the first code that is run when your mod is loaded.
     // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
     public AeroWeather(IEventBus modEventBus, ModContainer modContainer) {
-        // Register our mod's ModConfigSpec so that FML can create and load the config file for us
+        // Register our mod's ModConfigSpec so that FML can create and load the config file for us,
+        // first moving an older file's sections to where the current layout keeps them
+        ConfigMigration.common();
         modContainer.registerConfig(ModConfig.Type.COMMON, AeroWeatherCommonConfig.SPEC);
 
         // Biome wind factors are config-driven, so a reload has to rebuild them and drop
