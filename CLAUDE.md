@@ -1150,6 +1150,15 @@ entry. Its creative-tab listener is added with `modEventBus.addListener` rather
 than `@EventBusSubscriber`, for the same reason `AeronauticsWindForceApplier`
 does: annotation scanning happens regardless of the gate.
 
+**Every data file that names the bearing or its plate must tolerate their absence.** In a tag
+that means `{"id": ..., "required": false}`, never a bare string: one missing required entry
+makes the tag loader drop the **whole merged tag**, every mod's entries with it. Up to 1.6.0
+`minecraft:mineable/pickaxe` listed both as bare strings, so any pack with Create and Sable
+but not Simulated lost the entire pickaxe tag: no pickaxe could mine stone or ores (reported by
+a user, log line "Couldn't load tag minecraft:mineable/pickaxe as it is missing following
+references"). Loot tables and the recipe carry the same three-mod `neoforge:conditions` block
+(NeoForge parses loot tables through `ConditionalOps.createConditionalCodec`).
+
 `WindBearingBlock` overrides `getBlockEntityType()` but deliberately **not**
 `getBlockEntityClass()` — `IBE`'s `Class<T>` is invariant, so narrowing it
 doesn't compile, and the inherited `SwivelBearingBlockEntity.class` already
