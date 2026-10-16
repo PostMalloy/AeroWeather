@@ -71,6 +71,12 @@ which silently made the build version the floor).
 - `./gradlew runClient` — launch a dev client with the mod loaded
 - `./gradlew runServer` — launch a dev dedicated server
 - `./gradlew runData` — run data generators (outputs to `src/generated/resources`)
+- **Releasing:** bump `mod_version`, push, then publish a GitHub release tagged `v<mod_version>`.
+  `.github/workflows/publish.yml` builds the tag, attaches the jar to the release and uploads it
+  to Modrinth (`oFN6RGHX`) and CurseForge (`1694999`), title as version name, description as
+  changelog, pre-release as beta. It fails before building if the tag and `mod_version`
+  disagree. Needs the `MODRINTH_TOKEN` and `CURSEFORGE_TOKEN` repo secrets; the platform
+  dependency list is in the workflow, not read from `mods.toml`.
 - `neoForge.ideSyncTask generateModMetadata` runs automatically on IDE
   project sync, so `mods.toml` template substitutions stay current
   without a manual build
@@ -150,7 +156,7 @@ client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
   CloudWind.java                      ClientTickEvent.Post: integrates the clouds' offset from the wind at cloud height;
-                                       read by both cloud mixins (see M18)
+                                       read by both cloud mixins and the cloud-shadow one (see M18)
   ClientActiveWindmills.java          client-side set of Create windmills the wind is currently turning; self-reported
                                        by the windmill mixin (no networking), keyed by bearing position but located at
                                        its world position (ship-aware); entries age out after 20 ticks
@@ -219,7 +225,7 @@ integration/
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
                                        LoadingModList says that mod is installed ("create", "particlerain", "simulated",
-                                       "mc2_interactivefoliage", "sodium")
+                                       "mc2_interactivefoliage", "sodium", "better_cloud_shadows")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
@@ -238,6 +244,8 @@ mixin/
   LevelRendererCloudsMixin.java       vanilla renderClouds: drift constant to 0, camera X/Z shifted by CloudWind (M18);
                                        the only mixin in the JSON's "client" list, since its target always exists
   SodiumCloudsMixin.java              the same two changes in Sodium's CloudRenderer.render, by string target (M18)
+  BetterCloudShadowsMixin.java        the same two changes where Better Cloud Shadows works out the clouds' origin,
+                                       so its shadows stay under them; string target (M18)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -1824,6 +1832,33 @@ so it's smooth at any frame rate, and it's wrapped at 24,576 blocks (vanilla's o
 wrap, a whole number of repeats of any cloud texture up to 2048 px wide) without
 disturbing the interpolation. Nothing moves while paused, as in vanilla.
 
+### Better Cloud Shadows
+
+[Better Cloud Shadows](https://github.com/evanbones/Better-Cloud-Shadows) (BCS) draws
+shadows on the ground under the clouds. It doesn't read where the renderer put them; it
+works it out again, in `clouds.VanillaClouds.field`, with vanilla's own sum: a texture
+origin of `-(ticks + partialTick) * 0.03` blocks on X and `-0.33 * 12` on Z, handed to
+`CloudField.single(originX, originZ, ...)`. That one path serves vanilla's and Sodium's
+clouds alike. So with M18 alone, the clouds followed the wind and the shadows kept drifting
+west at vanilla's 0.6 blocks/s underneath them.
+
+`BetterCloudShadowsMixin` makes the same two changes as the cloud mixins: the `0.03F` (one
+in `field`) to 0, and `@ModifyArg` on arguments 0 and 1 of that `single` call (also one) to
+add `CloudWind.carriedX()`/`carriedZ()`. Shifting the camera back by the offset puts the
+cloud texture's origin exactly there in world space, so the two always agree, with the same
+partial tick (BCS renders at `AFTER_PARTICLES` with `getGameTimeDeltaPartialTick(false)`,
+the same one `CloudWind` reads). Nothing else is needed: BCS keeps its coverage texture
+centred on the camera by scrolling it whenever the origin moves, on either axis and in
+either direction. `CloudWind`'s 24,576-block wrap makes its origin jump by 2,048 cells,
+which BCS answers with one full resample of identical data.
+
+Only BCS's vanilla path is hooked. When Better Clouds, Cloud Layers, Cirrus or Cloud Tweaks
+owns the clouds, BCS reads those mods' clouds instead, and AeroWeather doesn't move them;
+its Distant Horizons layer tracks DH's own cloud boxes. Verified against
+`better_cloud_shadows-neoforge-1.21.1-1.4.0` (CurseForge project `1704307`, file
+`9208857`). String target, `remap = false`, `require = 0`, withheld by the plugin unless
+`better_cloud_shadows` is loaded.
+
 **Inactive means vanilla clouds, not frozen ones:** when the option is off, or no wind
 has synced for the dimension (a server without AeroWeather), both mixins pass the
 original values through. Switching between the two (joining, changing dimension) makes
@@ -1887,7 +1922,9 @@ Aeronautics, and Sable are absent — they're optional dependencies.
 - **Sixth sanctioned exception (M18)**: `mixin/SodiumCloudsMixin` targets Sodium's
   `CloudRenderer` on the same terms as M9, M12 and M16 — a string target, Minecraft-only
   descriptors, withheld by `AeroWeatherMixinPlugin` when `sodium` is absent. Its helper,
-  `client/CloudWind`, contains no Sodium references at all.
+  `client/CloudWind`, contains no Sodium references at all. `mixin/BetterCloudShadowsMixin`
+  targets Better Cloud Shadows' `VanillaClouds` on the same terms, gated on
+  `better_cloud_shadows`, with the same helper.
 - **Fifth sanctioned exception (M16)**: the three `InteractiveFoliage*Mixin`s target
   Interactive Foliage classes on the same terms as M9 and M12 — string targets and
   descriptors only, never a type, withheld by `AeroWeatherMixinPlugin` when
@@ -2043,6 +2080,8 @@ live-tested.** Verified statically: each injection target's bytecode, in vanilla
 `renderClouds` and Sodium 0.8.13's `CloudRenderer.render`, and that each hooked constant and
 call appears exactly once. Not confirmed yet: that the clouds actually move with the wind in
 game, under vanilla and under Sodium, and whether 2.4 blocks/s at strength 100 reads well.
+The Better Cloud Shadows hook is compile-verified against the real 1.4.0 jar's bytecode only;
+that the shadows stay under the clouds in game hasn't been checked.
 
 ## External references
 
@@ -2176,9 +2215,17 @@ game, under vanilla and under Sodium, and whether 2.4 blocks/s at strength 100 r
   `Gj6Yce3v`), pinned to `2.4.5-neoforge+1.21.1` (`uGTq42kW`). On our dev runtime only
   because IF needs it; AeroWeather never touches it.
 - Sodium: https://github.com/CaffeineMC/sodium. Real modId `sodium`, Modrinth `sodium` (id
-  `AANobbMI`). Not on the dev runtime; M18's mixin was written against
-  `mc1.21.1-0.8.13-neoforge` (`uMOpc5uV`), whose jar nests the mod under
-  `META-INF/jarjar/`. Its cloud renderer is `client.render.immediate.CloudRenderer`.
+  `AANobbMI`). `localRuntime` only, pinned to `mc1.21.1-0.8.13-neoforge` (`uMOpc5uV`), the
+  build M18's mixin was written against; its jar nests the mod under `META-INF/jarjar/`.
+  Client-only (`@Mod(dist = CLIENT)`), and deliberately not in our `mods.toml`. Every other
+  dev-runtime mod accepts it: Sable is incompatible below `0.8.12-alpha.2`, Create wants
+  `0.6.9+`, its bundled Flywheel `0.6.0-beta.2+`. Its cloud renderer is
+  `client.render.immediate.CloudRenderer`.
+- Better Cloud Shadows: https://github.com/evanbones/Better-Cloud-Shadows. Real modId
+  `better_cloud_shadows`, MIT, client-only, **CurseForge only** (project `1704307`; no
+  Modrinth listing, so not reachable through our Modrinth Maven). Not on the dev runtime; M18's
+  mixin was written against `better_cloud_shadows-neoforge-1.21.1-1.4.0` (file `9208857`). The
+  repo has a single `1.21.1` branch and no tags, so read the jar to confirm a version.
 - Modrinth Maven: `https://api.modrinth.com/maven` (wired via
   `exclusiveContent`/`includeGroup "maven.modrinth"`), coordinates
   `maven.modrinth:<slug>:<version id>`, pinned in `gradle.properties`.

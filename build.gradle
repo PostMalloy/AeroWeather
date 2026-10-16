@@ -216,6 +216,14 @@ dependencies {
     localRuntime "maven.modrinth:mc2-interactive-foliage:${interactive_foliage_version}"
     localRuntime "maven.modrinth:sway:${sway_version}"
 
+    // Sodium (M18): replaces vanilla's cloud renderer, so clouds following the wind needs
+    // SodiumCloudsMixin there too. localRuntime only - the mixin names it purely by string
+    // (CloudRenderer.render takes only Minecraft and JOML types), and it's not declared in
+    // mods.toml at all, since nothing of ours depends on it. Client-only (@Mod dist = CLIENT),
+    // so runServer loads it without constructing it. The jar nests the real mod under
+    // META-INF/jarjar/, which FML unpacks as it does Create's bundled libraries.
+    localRuntime "maven.modrinth:sodium:${sodium_version}"
+
     // GeckoLib (M10): renders the wind vane block's animated model. A REQUIRED dependency,
     // unlike Sable/Create above - declared type="required" in neoforge.mods.toml, so no
     // ModCompat gate is needed around it. `implementation` so it's on the dev runtime too.

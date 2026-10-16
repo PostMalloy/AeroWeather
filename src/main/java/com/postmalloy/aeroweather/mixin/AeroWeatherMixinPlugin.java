@@ -48,6 +48,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     /** Sodium replaces vanilla's cloud renderer with its own, so clouds following the wind needs a hook there too. */
     private static final String SODIUM_MODID = "sodium";
     private static final String SODIUM_CLOUDS_MIXIN = "SodiumCloudsMixin";
+    /** Better Cloud Shadows works out where the clouds are on its own, so its shadows need the same wind offset. */
+    private static final String BETTER_CLOUD_SHADOWS_MODID = "better_cloud_shadows";
+    private static final String BETTER_CLOUD_SHADOWS_MIXIN = "BetterCloudShadowsMixin";
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -84,6 +87,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
         }
         if (isLoaded(SODIUM_MODID)) {
             mixins.add(SODIUM_CLOUDS_MIXIN);
+        }
+        if (isLoaded(BETTER_CLOUD_SHADOWS_MODID)) {
+            mixins.add(BETTER_CLOUD_SHADOWS_MIXIN);
         }
         return mixins;
     }

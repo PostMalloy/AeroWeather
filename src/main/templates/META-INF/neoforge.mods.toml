@@ -126,6 +126,15 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="CLIENT"
 
+# Better Cloud Shadows (M18): its shadows follow our wind-driven clouds instead of vanilla's
+# fixed drift, via a mixin that names it only by string. Client-only mod, like Particle Rain.
+[[dependencies.${mod_id}]]
+    modId="better_cloud_shadows"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="CLIENT"
+
 # Optional soft dependencies for M7's Aeronautics wind force integration (see CLAUDE.md).
 # Sable is the actual technical dependency (AeronauticsWindForceApplier's API surface);
 # Create is Sable's own optional dependency and is declared here too since it's present

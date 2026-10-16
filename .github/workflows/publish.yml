@@ -1,0 +1,86 @@
+name: Publish
+
+# Publishing a GitHub release builds the jar from its tag, attaches it to the release, and
+# uploads it to Modrinth and CurseForge. The release's title becomes the version name there,
+# and its description the changelog. A release marked as a pre-release goes up as a beta.
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   MODRINTH_TOKEN    a Modrinth personal access token with the "Create versions" scope
+#   CURSEFORGE_TOKEN  a CurseForge API token, from curseforge.com > Settings > API Tokens
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      # Tags are "v1.6.0"; the jar and both sites use "1.6.0". Catches a release tagged
+      # before mod_version was bumped, which would otherwise publish a jar named after
+      # the previous version.
+      - name: Check tag matches mod_version
+        id: version
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          version="${tag#v}"
+          mod_version="$(grep -E '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')"
+          if [ "$version" != "$mod_version" ]; then
+            echo "::error::Release tag $tag doesn't match mod_version=$mod_version in gradle.properties"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      # --clobber replaces a jar attached by hand when the release was drafted.
+      - name: Attach jar to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "build/libs/aeroweather-${{ steps.version.outputs.version }}.jar" --clobber
+
+      # Dependencies are listed here rather than read from mods.toml: its modids aren't all
+      # valid project slugs (mc2_interactivefoliage), and it names mods that past versions
+      # never listed (sable, create).
+      - name: Publish to Modrinth and CurseForge
+        uses: Kira-NT/mc-publish@v3.3.1
+        with:
+          modrinth-id: oFN6RGHX
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          curseforge-id: 1694999
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+
+          files: build/libs/aeroweather-${{ steps.version.outputs.version }}.jar
+          version: ${{ steps.version.outputs.version }}
+          version-type: ${{ github.event.release.prerelease && 'beta' || 'release' }}
+          loaders: neoforge
+          game-versions: 1.21.1
+          java: 21
+          environment: client | server
+          dependencies: |
+            geckolib(required){modrinth:8BmcQJ2H}{curseforge:geckolib}
+            create-aeronautics(optional){modrinth:oWaK0Q19}{curseforge:create-aeronautics}
+            particle-rain(optional){modrinth:nrikgvxm}{curseforge:particle-rain}
+            mc2-interactive-foliage(optional){modrinth:ba5MV2CF}{curseforge:mc2-interactive-foliage}
+            better-cloud-shadows(optional){curseforge:better-cloud-shadows}#(ignore:modrinth)

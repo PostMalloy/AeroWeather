@@ -24,7 +24,9 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * them west at a fixed 0.6 blocks a second. Sodium's renderer does exactly the same
  * sum. So both mixins make the same two changes — that drift term becomes 0, and the
  * camera X/Z used for the lookup are shifted back by {@link #shiftX}/{@link #shiftZ} —
- * and the clouds then sit wherever this offset has carried them.
+ * and the clouds then sit wherever this offset has carried them. Better Cloud Shadows
+ * works out where vanilla's clouds are with that same sum, so its mixin makes the same
+ * two changes and the shadows stay under the clouds.
  * <p>
  * The offset is integrated here once a client tick, from the wind sampled at the
  * camera's XZ and the dimension's own cloud height, and interpolated by partial tick
@@ -77,11 +79,24 @@ public final class CloudWind {
 
     /** The camera X to look the cloud texture up at, so the clouds appear carried by the wind. */
     public static double shiftX(double cameraX) {
-        return active ? cameraX - Mth.lerp(partialTick(), previousX, offsetX) : cameraX;
+        return cameraX - carriedX();
     }
 
     public static double shiftZ(double cameraZ) {
-        return active ? cameraZ - Mth.lerp(partialTick(), previousZ, offsetZ) : cameraZ;
+        return cameraZ - carriedZ();
+    }
+
+    /**
+     * How far the wind has carried the clouds this frame, in blocks; 0 while inactive. The
+     * clouds' texture origin sits here in world space, which is what a mod drawing
+     * something under them (Better Cloud Shadows) needs.
+     */
+    public static double carriedX() {
+        return active ? Mth.lerp(partialTick(), previousX, offsetX) : 0.0;
+    }
+
+    public static double carriedZ() {
+        return active ? Mth.lerp(partialTick(), previousZ, offsetZ) : 0.0;
     }
 
     /** The same partial tick the cloud renderers are handed, so the interpolation lines up with the frame. */
