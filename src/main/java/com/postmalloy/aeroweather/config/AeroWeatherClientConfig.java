@@ -43,6 +43,8 @@ public final class AeroWeatherClientConfig {
     public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_STORM_STRENGTH;
     public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_EASE_RATE;
     public static final ModConfigSpec.DoubleValue INTERACTIVE_FOLIAGE_MAX_TURN_RATE;
+    public static final ModConfigSpec.BooleanValue ADVANCED_CHIMNEYS_ENABLED;
+    public static final ModConfigSpec.DoubleValue ADVANCED_CHIMNEYS_SMOKE_SPEED;
 
     public static final ModConfigSpec.BooleanValue PARTICLE_RAIN_ENABLED;
     public static final ModConfigSpec.DoubleValue PARTICLE_RAIN_ANGLE_DEGREES;
@@ -192,6 +194,19 @@ public final class AeroWeatherClientConfig {
             INTERACTIVE_FOLIAGE_MAX_TURN_RATE = builder
                     .comment("The fastest grass may swing round to a new wind direction, in degrees per second. A full reversal takes at least 180 divided by this. Faster looks snappier but can flicker the gusts at high wind.")
                     .defineInRange("interactiveFoliageMaxTurnRate", 90.0, 1.0, 3600.0);
+            builder.pop();
+
+            builder.comment(
+                    "Advanced Chimneys integration. Ignored unless Advanced Chimneys is installed.",
+                    "Chimney smoke blows with our wind, at its own height and position, instead of the wind Advanced Chimneys simulates for itself.",
+                    "With Advanced Chimneys' own useVanillaParticles option on, its smoke is vanilla campfire smoke, which follows the ambient particle settings instead."
+            ).push("advancedChimneys");
+            ADVANCED_CHIMNEYS_ENABLED = builder
+                    .comment("Whether AeroWeather's wind blows Advanced Chimneys' smoke. Off hands it back to Advanced Chimneys' own wind.")
+                    .define("advancedChimneysEnabled", true);
+            ADVANCED_CHIMNEYS_SMOKE_SPEED = builder
+                    .comment("How fast smoke drifts sideways, in blocks per second, once out of the chimney and in the open, when the wind there is at strength 100; slower in lighter wind, straight up in calm air. The default matches campfire smoke's ambient drift.")
+                    .defineInRange("advancedChimneysSmokeSpeed", 4.0, 0.0, 40.0);
             builder.pop();
         builder.pop();
 

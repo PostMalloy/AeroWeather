@@ -51,6 +51,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     /** Better Cloud Shadows works out where the clouds are on its own, so its shadows need the same wind offset. */
     private static final String BETTER_CLOUD_SHADOWS_MODID = "better_cloud_shadows";
     private static final String BETTER_CLOUD_SHADOWS_MIXIN = "BetterCloudShadowsMixin";
+    /** Advanced Chimneys blows its smoke with ForgeEndertech's own wind; this swaps in ours. */
+    private static final String ADVANCED_CHIMNEYS_MODID = "adchimneys";
+    private static final String ADVANCED_CHIMNEYS_MIXIN = "AdvancedChimneysSmokeMixin";
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -90,6 +93,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
         }
         if (isLoaded(BETTER_CLOUD_SHADOWS_MODID)) {
             mixins.add(BETTER_CLOUD_SHADOWS_MIXIN);
+        }
+        if (isLoaded(ADVANCED_CHIMNEYS_MODID)) {
+            mixins.add(ADVANCED_CHIMNEYS_MIXIN);
         }
         return mixins;
     }

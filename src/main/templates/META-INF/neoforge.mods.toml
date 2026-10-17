@@ -126,6 +126,15 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="CLIENT"
 
+# Advanced Chimneys: its smoke blows with our wind instead of its library's own, via a client
+# mixin that names it only by string. Needed on both sides by that mod, but our hook is client-only.
+[[dependencies.${mod_id}]]
+    modId="adchimneys"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="CLIENT"
+
 # Better Cloud Shadows (M18): its shadows follow our wind-driven clouds instead of vanilla's
 # fixed drift, via a mixin that names it only by string. Client-only mod, like Particle Rain.
 [[dependencies.${mod_id}]]

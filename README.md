@@ -55,6 +55,7 @@ The mod was designed to be as configurable as possible.
 * [Particle Rain](https://modrinth.com/mod/particle-rain): particles are wind-driven and move in the direction of the wind.
 * [Interactive Foliage](https://www.curseforge.com/minecraft/mc-mods/mc2-interactive-foliage): Grass movement from this mod is derived from the simulated wind of AeroWeather.
 * [Better Cloud Shadows](https://www.curseforge.com/minecraft/mc-mods/better-cloud-shadows): cloud shadows move with AeroWeather's wind-driven clouds.
+* [Advanced Chimneys](https://modrinth.com/mod/advanced-chimneys): chimney smoke blows with AeroWeather's wind.
 
 ## Future Features
 

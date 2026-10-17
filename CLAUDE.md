@@ -210,6 +210,9 @@ integration/
   particlerain/
     ParticleRainWind.java             the wind vector handed to Particle Rain's weather particles; zero Particle
                                        Rain types, always safe to classload (see M12)
+  adchimneys/
+    ChimneySmokeWind.java             the velocity Advanced Chimneys' smoke is blown at, from WorldWind at the puff's
+                                       live position; zero Advanced Chimneys/ForgeEndertech types (see M19)
   interactivefoliage/
     FoliageShaderPatch.java           pure text rewrite of IF's shaders: direction read from Weather.w (see M16)
     FoliageWind.java                  client tick: eased lean/storm/direction; the Weather vector IF's shaders get;
@@ -225,7 +228,7 @@ integration/
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
                                        LoadingModList says that mod is installed ("create", "particlerain", "simulated",
-                                       "mc2_interactivefoliage", "sodium", "better_cloud_shadows")
+                                       "mc2_interactivefoliage", "sodium", "better_cloud_shadows", "adchimneys")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
@@ -246,6 +249,8 @@ mixin/
   SodiumCloudsMixin.java              the same two changes in Sodium's CloudRenderer.render, by string target (M18)
   BetterCloudShadowsMixin.java        the same two changes where Better Cloud Shadows works out the clouds' origin,
                                        so its shadows stay under them; string target (M18)
+  AdvancedChimneysSmokeMixin.java     after Advanced Chimneys' smoke particle sets its velocity from its own wind,
+                                       overwrites it with ours; string target (M19)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -1879,6 +1884,59 @@ the clouds jump once.
 layers cancel exactly there, so the clouds hold still; lower `upperWindLayerHeight` to
 put the clouds in the upper layer proper.
 
+## M19: Advanced Chimneys smoke
+
+[Advanced Chimneys](https://modrinth.com/mod/advanced-chimneys) (modid `adchimneys`, by
+EnderLanky) pipes smoke from fires and furnaces up chimneys and releases it at the top. Its
+smoke already blows in a wind, simulated by its required library ForgeEndertech
+(`forgeendertech`). This swaps in ours. Client config `compat.advancedChimneys`:
+`advancedChimneysEnabled` (default true) and `advancedChimneysSmokeSpeed` (default 4 blocks/s
+at strength 100, i.e. 0.2 blocks/tick, the same as `ambientWindParticleIntensity`, so chimney
+smoke and campfire smoke drift alike). No source is published and both mods are
+CC-BY-ND/ARR, so everything here was read from the shipped jars, and nothing of theirs is
+copied.
+
+### Where their wind goes
+
+All client-side. `world.SmokeLocations` emits smoke at each known outlet every tick, asking
+`GameWorld.getWindAt(level, pos)` (ForgeEndertech: Weather2's wind if that mod is installed,
+otherwise its own per-biome `Wind`) and handing the resulting `IWind` to every
+`ModernSmokeParticle` it spawns. The particle, `particles.AbstractSmokeParticle$Instance`,
+is the only thing that reads it, in `tick()`, in exactly one place:
+
+```java
+if (affectedByWind) {          // out of the chimney, an open-sky side beside it, no bounce delay
+    this.xd = this.wind.getMotion().x;
+    this.zd = this.wind.getMotion().z;
+} else if (!this.insideChimney) { /* friction */ }
+```
+
+It *sets* velocity rather than easing toward it, in blocks per tick. Their default wind tops
+out at 0.1 per axis, the same scale as ours.
+
+### The hook
+
+`AdvancedChimneysSmokeMixin` injects `@At(FIELD, PUTFIELD zd, ordinal = 0, shift = AFTER)`,
+right after that second assignment, and overwrites `xd`/`zd` with
+`ChimneySmokeWind.velocity(level, x, y, z)`. So it runs only on the ticks their own logic
+already decided the smoke is exposed, and every other behaviour (rising, sheltering, friction,
+bouncing off walls with its `ignoreWindDelay`) stays theirs. Sampled through `WorldWind` at
+the puff's **live** position every tick, as `AmbientWindDrift` does, so smoke picks up height
+scaling as it rises and biome factors as it drifts; calm air returns zero (smoke rises
+straight), while integration off or no synced wind returns null and leaves theirs. Hooking
+`GameWorld.getWindAt` instead was rejected: it returns `IWind`, so it would need a typed
+dependency on ForgeEndertech, and it's sampled once at the outlet, not per puff.
+
+The mixin `extends TextureSheetParticle` (the target's own superclass) to reach `Particle`'s
+protected `level`, `x`/`y`/`z` and `xd`/`zd`; see M9's note on why `@Shadow` can't reach
+inherited fields. The field target's owner is `AbstractSmokeParticle$Instance` itself, as the
+bytecode's `Fieldref` names it.
+
+Checked against every NeoForge 1.21.1 release on Modrinth (11.1.6.1 to 11.1.13.0, `MHGCnWtm`):
+in each, `tick()` calls `IWind.getMotion` exactly twice and the first `zd` write follows the
+second. Their `useVanillaParticles` option swaps the smoke for vanilla `campfire_cosy_smoke`,
+which our own `WindDriftingCampfireSmokeParticle` override already drifts.
+
 ## Command reference
 
 ```
@@ -1934,6 +1992,9 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   `client/CloudWind`, contains no Sodium references at all. `mixin/BetterCloudShadowsMixin`
   targets Better Cloud Shadows' `VanillaClouds` on the same terms, gated on
   `better_cloud_shadows`, with the same helper.
+- **Seventh (M19)**: `mixin/AdvancedChimneysSmokeMixin` targets Advanced Chimneys' smoke
+  particle on the same terms, gated on `adchimneys`. Its helper,
+  `integration/adchimneys/ChimneySmokeWind`, names neither Advanced Chimneys nor ForgeEndertech.
 - **Fifth sanctioned exception (M16)**: the three `InteractiveFoliage*Mixin`s target
   Interactive Foliage classes on the same terms as M9 and M12 — string targets and
   descriptors only, never a type, withheld by `AeroWeatherMixinPlugin` when
@@ -2092,6 +2153,10 @@ game, under vanilla and under Sodium, and whether 2.4 blocks/s at strength 100 r
 The Better Cloud Shadows hook is compile-verified against the real 1.4.0 jar's bytecode only;
 that the shadows stay under the clouds in game hasn't been checked.
 
+**M19 (Advanced Chimneys smoke, see its section) is written and compile-verified, but not yet
+live-tested.** Verified statically against all nine 1.21.1 NeoForge jars. Not confirmed yet:
+that the mixin applies at runtime, and whether 4 blocks/s reads well next to campfire smoke.
+
 ## External references
 
 - Create: real modId `create`. Modrinth project `create` (id
@@ -2235,6 +2300,10 @@ that the shadows stay under the clouds in game hasn't been checked.
   Modrinth listing, so not reachable through our Modrinth Maven). Not on the dev runtime; M18's
   mixin was written against `better_cloud_shadows-neoforge-1.21.1-1.4.0` (file `9208857`). The
   repo has a single `1.21.1` branch and no tags, so read the jar to confirm a version.
+- Advanced Chimneys: real modId `adchimneys`, Modrinth `advanced-chimneys` (id `r2rWUhnP`),
+  CurseForge `244830`, CC-BY-ND-4.0, no public source. Requires ForgeEndertech (modId
+  `forgeendertech`, Modrinth `EgS8gGp8`, same licence). Not on the dev runtime; M19 was written
+  against `11.1.13.0` (`MHGCnWtm`) with ForgeEndertech `12.1.4.0` (`r9lM1yuJ`).
 - Modrinth Maven: `https://api.modrinth.com/maven` (wired via
   `exclusiveContent`/`includeGroup "maven.modrinth"`), coordinates
   `maven.modrinth:<slug>:<version id>`, pinned in `gradle.properties`.

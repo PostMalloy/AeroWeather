@@ -84,3 +84,4 @@ jobs:
             particle-rain(optional){modrinth:nrikgvxm}{curseforge:particle-rain}
             mc2-interactive-foliage(optional){modrinth:ba5MV2CF}{curseforge:mc2-interactive-foliage}
             better-cloud-shadows(optional){curseforge:better-cloud-shadows}#(ignore:modrinth)
+            advanced-chimneys(optional){modrinth:r2rWUhnP}{curseforge:advanced-chimneys}
