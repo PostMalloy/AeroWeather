@@ -85,3 +85,4 @@ jobs:
             mc2-interactive-foliage(optional){modrinth:ba5MV2CF}{curseforge:mc2-interactive-foliage}
             better-cloud-shadows(optional){curseforge:better-cloud-shadows}#(ignore:modrinth)
             advanced-chimneys(optional){modrinth:r2rWUhnP}{curseforge:advanced-chimneys}
+            cloud-layers(optional){modrinth:QcR2Ww1K}{curseforge:cloud-layers}

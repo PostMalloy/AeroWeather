@@ -136,8 +136,9 @@ public final class AeroWeatherClientConfig {
 
         builder.comment(
                 "Clouds drift with the wind at cloud height instead of vanilla's fixed slow drift west, so",
-                "they show what the upper wind is doing. Works with vanilla's cloud renderer and Sodium's,",
-                "and Better Cloud Shadows' shadows move with them."
+                "they show what the upper wind is doing. Works with vanilla's cloud renderer and Sodium's, and",
+                "with Cloud Layers, where each layer follows the wind at its own height. Better Cloud Shadows'",
+                "shadows move with them in every case."
         ).push("clouds");
         CLOUD_WIND_ENABLED = builder
                 .comment("Whether clouds follow the wind. Off, or on a server without AeroWeather, they drift as in vanilla.")

@@ -1,5 +1,8 @@
 package com.postmalloy.aeroweather.client;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.postmalloy.aeroweather.AeroWeather;
 import com.postmalloy.aeroweather.config.AeroWeatherClientConfig;
 import com.postmalloy.aeroweather.wind.WindDirection;
@@ -28,9 +31,15 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * works out where vanilla's clouds are with that same sum, so its mixin makes the same
  * two changes and the shadows stay under the clouds.
  * <p>
- * The offset is integrated here once a client tick, from the wind sampled at the
- * camera's XZ and the dimension's own cloud height, and interpolated by partial tick
- * when drawn, so it's smooth at any frame rate.
+ * Cloud Layers draws several decks instead, each at its own height, so each gets its
+ * own drift: {@link #carriedX(double, boolean)}/{@link #carriedZ(double, boolean)} track
+ * one per distinct height, created the first time that height is drawn and dropped once
+ * it hasn't been for {@link #LAYER_EXPIRY_TICKS}. Layers at one height share air, and so
+ * share a drift.
+ * <p>
+ * Each offset is integrated here once a client tick, from the wind sampled at the
+ * camera's XZ and that deck's height, and interpolated by partial tick when drawn, so
+ * it's smooth at any frame rate.
  *
  * <h2>Smoothing</h2>
  * The wind reaching the client moves in small steps — a sync whenever direction moves
@@ -49,25 +58,25 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 @EventBusSubscriber(modid = AeroWeather.MODID, value = Dist.CLIENT)
 public final class CloudWind {
     /**
-     * The offset is wrapped at this many blocks to keep it small. It's vanilla's own
+     * Vanilla's offset is wrapped at this many blocks to keep it small. It's vanilla's own
      * wrap (2048 cloud cells of 12 blocks), a whole number of repeats of any cloud
      * texture up to 2048 pixels wide, so wrapping never shows.
      */
     private static final double WRAP_BLOCKS = 2048.0 * 12.0;
-
+    /**
+     * A Cloud Layers deck not drawn for this long is forgotten. Long enough to ride out a
+     * pause in drawing (a loading screen), short enough that a layer whose conditions hide
+     * it (weather, time of day) isn't integrated for nothing in the meantime.
+     */
+    private static final int LAYER_EXPIRY_TICKS = 100;
 
     private static boolean active;
-    /** Blocks per tick. */
-    private static double velocityX;
-    private static double velocityZ;
-    /** Blocks per tick per tick: the spring's own rate, which is what keeps the velocity's changes smooth. */
-    private static double accelerationX;
-    private static double accelerationZ;
-    /** How far the clouds have been carried, in blocks; previous is one tick earlier, for interpolation. */
-    private static double offsetX;
-    private static double offsetZ;
-    private static double previousX;
-    private static double previousZ;
+    /** Counts client ticks while active; a deck remembers the last one it was drawn in. */
+    private static long ticks;
+    /** Vanilla's (and Sodium's) single deck, at the dimension's own cloud height. */
+    private static final Drift VANILLA = new Drift(0.0, false, true);
+    /** Cloud Layers' decks, a handful at most, so a list beats a map. */
+    private static final List<Drift> LAYERS = new ArrayList<>();
 
     private CloudWind() {
     }
@@ -87,16 +96,45 @@ public final class CloudWind {
     }
 
     /**
-     * How far the wind has carried the clouds this frame, in blocks; 0 while inactive. The
-     * clouds' texture origin sits here in world space, which is what a mod drawing
-     * something under them (Better Cloud Shadows) needs.
+     * How far the wind has carried vanilla's clouds this frame, in blocks; 0 while
+     * inactive. The clouds' texture origin sits here in world space, which is what a mod
+     * drawing something under them (Better Cloud Shadows) needs.
      */
     public static double carriedX() {
-        return active ? Mth.lerp(partialTick(), previousX, offsetX) : 0.0;
+        return active ? VANILLA.carriedX() : 0.0;
     }
 
     public static double carriedZ() {
-        return active ? Mth.lerp(partialTick(), previousZ, offsetZ) : 0.0;
+        return active ? VANILLA.carriedZ() : 0.0;
+    }
+
+    /**
+     * How far the wind has carried a Cloud Layers deck this frame, in blocks; 0 while
+     * inactive.
+     *
+     * @param height      the deck's world Y, or, if {@code aboveCamera}, its height above the camera
+     * @param aboveCamera a deck that rides along with the camera (Cloud Layers' skybox mode)
+     */
+    public static double carriedX(double height, boolean aboveCamera) {
+        return active ? layer(height, aboveCamera).carriedX() : 0.0;
+    }
+
+    public static double carriedZ(double height, boolean aboveCamera) {
+        return active ? layer(height, aboveCamera).carriedZ() : 0.0;
+    }
+
+    /** Finds the deck at this height, starting one if it's new. Render thread, which is also the tick thread. */
+    private static Drift layer(double height, boolean aboveCamera) {
+        for (Drift drift : LAYERS) {
+            if (drift.height == height && drift.aboveCamera == aboveCamera) {
+                drift.lastDrawn = ticks;
+                return drift;
+            }
+        }
+        Drift drift = new Drift(height, aboveCamera, false);
+        drift.lastDrawn = ticks;
+        LAYERS.add(drift);
+        return drift;
     }
 
     /** The same partial tick the cloud renderers are handed, so the interpolation lines up with the frame. */
@@ -123,73 +161,133 @@ public final class CloudWind {
             return;
         }
 
-        Vec3 target = targetVelocity(minecraft, level);
-        if (!active) {
-            // The first reading snaps, so the clouds don't start from a standstill.
-            velocityX = target.x;
-            velocityZ = target.z;
-            active = true;
-        }
-
-        double smoothTicks = AeroWeatherClientConfig.CLOUD_SMOOTHING_SECONDS.getAsDouble() * 20.0;
-        double startX = velocityX;
-        double startZ = velocityZ;
-        if (smoothTicks <= 0.0) {
-            velocityX = target.x;
-            velocityZ = target.z;
-            accelerationX = 0.0;
-            accelerationZ = 0.0;
-        } else {
-            // Unity's SmoothDamp, one tick at a time. omega = 2 / smoothTime makes it settle in
-            // about smoothTime; the polynomial stands in for exp(-omega), and is stable for any step.
-            double omega = 2.0 / smoothTicks;
-            double decay = 1.0 / (1.0 + omega + 0.48 * omega * omega + 0.235 * omega * omega * omega);
-            double tempX = accelerationX + omega * (velocityX - target.x);
-            double tempZ = accelerationZ + omega * (velocityZ - target.z);
-            accelerationX = (accelerationX - omega * tempX) * decay;
-            accelerationZ = (accelerationZ - omega * tempZ) * decay;
-            velocityX = target.x + (velocityX - target.x + tempX) * decay;
-            velocityZ = target.z + (velocityZ - target.z + tempZ) * decay;
-        }
-
-        // Trapezoidal: the distance covered while the velocity moved from start to its new value.
-        previousX = offsetX;
-        previousZ = offsetZ;
-        offsetX += (startX + velocityX) * 0.5;
-        offsetZ += (startZ + velocityZ) * 0.5;
-
-        // Shift both by the same amount, so the interpolation between them is unaffected.
-        double wrapX = Math.floor(offsetX / WRAP_BLOCKS) * WRAP_BLOCKS;
-        double wrapZ = Math.floor(offsetZ / WRAP_BLOCKS) * WRAP_BLOCKS;
-        offsetX -= wrapX;
-        previousX -= wrapX;
-        offsetZ -= wrapZ;
-        previousZ -= wrapZ;
-    }
-
-    /** Blocks per tick the clouds should move: the wind at cloud height, above the camera. */
-    private static Vec3 targetVelocity(Minecraft minecraft, ClientLevel level) {
-        float cloudHeight = level.effects().getCloudHeight();
-        if (Float.isNaN(cloudHeight)) {
-            return Vec3.ZERO;
-        }
+        active = true;
+        ticks++;
         Vec3 camera = minecraft.gameRenderer.getMainCamera().getPosition();
-        WorldWind.Sample wind = WorldWind.at(level, camera.x, cloudHeight, camera.z,
-                ClientWindState.directionDeg(), ClientWindState.strength());
-        double blocksPerTick = AeroWeatherClientConfig.CLOUD_SPEED_AT_FULL_STRENGTH.getAsDouble()
-                * (wind.strength() / 100.0) / 20.0;
-        return WindDirection.travelVector(wind.directionDeg()).scale(blocksPerTick);
+        double smoothTicks = AeroWeatherClientConfig.CLOUD_SMOOTHING_SECONDS.getAsDouble() * 20.0;
+
+        VANILLA.height = level.effects().getCloudHeight();
+        VANILLA.step(level, camera, smoothTicks);
+        LAYERS.removeIf(drift -> ticks - drift.lastDrawn > LAYER_EXPIRY_TICKS);
+        for (Drift drift : LAYERS) {
+            drift.step(level, camera, smoothTicks);
+        }
     }
 
     private static void reset() {
         active = false;
-        velocityX = 0.0;
-        velocityZ = 0.0;
-        accelerationX = 0.0;
-        accelerationZ = 0.0;
-        offsetX = 0.0;
-        offsetZ = 0.0;
-        previousX = 0.0;
-        previousZ = 0.0;
+        VANILLA.reset();
+        LAYERS.clear();
+    }
+
+    /** One deck of clouds being carried by the wind at its own height. */
+    private static final class Drift {
+        /** World Y, or height above the camera if {@link #aboveCamera}; NaN (no clouds) means still air. */
+        double height;
+        final boolean aboveCamera;
+        final boolean wraps;
+        long lastDrawn;
+
+        boolean started;
+        /** Blocks per tick. */
+        double velocityX;
+        double velocityZ;
+        /** Blocks per tick per tick: the spring's own rate, which is what keeps the velocity's changes smooth. */
+        double accelerationX;
+        double accelerationZ;
+        /** How far the clouds have been carried, in blocks; previous is one tick earlier, for interpolation. */
+        double offsetX;
+        double offsetZ;
+        double previousX;
+        double previousZ;
+
+        /**
+         * Only vanilla's deck wraps. Cloud Layers' cells can be any size, so no one period
+         * would keep every layer's grid aligned; it never wraps its own drift either, and a
+         * double holds centuries of it.
+         */
+        Drift(double height, boolean aboveCamera, boolean wraps) {
+            this.height = height;
+            this.aboveCamera = aboveCamera;
+            this.wraps = wraps;
+        }
+
+        double carriedX() {
+            return Mth.lerp(partialTick(), previousX, offsetX);
+        }
+
+        double carriedZ() {
+            return Mth.lerp(partialTick(), previousZ, offsetZ);
+        }
+
+        void step(ClientLevel level, Vec3 camera, double smoothTicks) {
+            Vec3 target = targetVelocity(level, camera, aboveCamera ? camera.y + height : height);
+            if (!started) {
+                // The first reading snaps, so the clouds don't start from a standstill.
+                velocityX = target.x;
+                velocityZ = target.z;
+                started = true;
+            }
+
+            double startX = velocityX;
+            double startZ = velocityZ;
+            if (smoothTicks <= 0.0) {
+                velocityX = target.x;
+                velocityZ = target.z;
+                accelerationX = 0.0;
+                accelerationZ = 0.0;
+            } else {
+                // Unity's SmoothDamp, one tick at a time. omega = 2 / smoothTime makes it settle in
+                // about smoothTime; the polynomial stands in for exp(-omega), and is stable for any step.
+                double omega = 2.0 / smoothTicks;
+                double decay = 1.0 / (1.0 + omega + 0.48 * omega * omega + 0.235 * omega * omega * omega);
+                double tempX = accelerationX + omega * (velocityX - target.x);
+                double tempZ = accelerationZ + omega * (velocityZ - target.z);
+                accelerationX = (accelerationX - omega * tempX) * decay;
+                accelerationZ = (accelerationZ - omega * tempZ) * decay;
+                velocityX = target.x + (velocityX - target.x + tempX) * decay;
+                velocityZ = target.z + (velocityZ - target.z + tempZ) * decay;
+            }
+
+            // Trapezoidal: the distance covered while the velocity moved from start to its new value.
+            previousX = offsetX;
+            previousZ = offsetZ;
+            offsetX += (startX + velocityX) * 0.5;
+            offsetZ += (startZ + velocityZ) * 0.5;
+
+            if (wraps) {
+                // Shift both by the same amount, so the interpolation between them is unaffected.
+                double wrapX = Math.floor(offsetX / WRAP_BLOCKS) * WRAP_BLOCKS;
+                double wrapZ = Math.floor(offsetZ / WRAP_BLOCKS) * WRAP_BLOCKS;
+                offsetX -= wrapX;
+                previousX -= wrapX;
+                offsetZ -= wrapZ;
+                previousZ -= wrapZ;
+            }
+        }
+
+        void reset() {
+            started = false;
+            velocityX = 0.0;
+            velocityZ = 0.0;
+            accelerationX = 0.0;
+            accelerationZ = 0.0;
+            offsetX = 0.0;
+            offsetZ = 0.0;
+            previousX = 0.0;
+            previousZ = 0.0;
+        }
+    }
+
+    /** Blocks per tick the clouds at {@code cloudY} should move: the wind there, above the camera. */
+    private static Vec3 targetVelocity(ClientLevel level, Vec3 camera, double cloudY) {
+        if (Double.isNaN(cloudY)) {
+            return Vec3.ZERO;
+        }
+        WorldWind.Sample wind = WorldWind.at(level, camera.x, cloudY, camera.z,
+                ClientWindState.directionDeg(), ClientWindState.strength());
+        double blocksPerTick = AeroWeatherClientConfig.CLOUD_SPEED_AT_FULL_STRENGTH.getAsDouble()
+                * (wind.strength() / 100.0) / 20.0;
+        return WindDirection.travelVector(wind.directionDeg()).scale(blocksPerTick);
     }
 }

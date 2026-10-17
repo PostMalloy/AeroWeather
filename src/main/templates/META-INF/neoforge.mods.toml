@@ -135,6 +135,15 @@ config="${mod_id}.mixins.json"
     ordering="AFTER"
     side="CLIENT"
 
+# Cloud Layers (M18): each of its cloud decks drifts with our wind at its own height, via a
+# mixin that names it only by string. Client-only mod.
+[[dependencies.${mod_id}]]
+    modId="cloud_layers"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="CLIENT"
+
 # Better Cloud Shadows (M18): its shadows follow our wind-driven clouds instead of vanilla's
 # fixed drift, via a mixin that names it only by string. Client-only mod, like Particle Rain.
 [[dependencies.${mod_id}]]

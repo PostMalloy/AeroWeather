@@ -155,8 +155,8 @@ network/
 client/
   ClientWindState.java                client-side cache of latest synced wind per dimension
   ClientActiveContraptions.java       client-side cache of latest synced active-contraption positions per dimension
-  CloudWind.java                      ClientTickEvent.Post: integrates the clouds' offset from the wind at cloud height;
-                                       read by both cloud mixins and the cloud-shadow one (see M18)
+  CloudWind.java                      ClientTickEvent.Post: integrates the clouds' offset from the wind at cloud height,
+                                       one drift for vanilla's deck plus one per Cloud Layers height (see M18)
   ClientActiveWindmills.java          client-side set of Create windmills the wind is currently turning; self-reported
                                        by the windmill mixin (no networking), keyed by bearing position but located at
                                        its world position (ship-aware); entries age out after 20 ticks
@@ -213,6 +213,9 @@ integration/
   adchimneys/
     ChimneySmokeWind.java             the velocity Advanced Chimneys' smoke is blown at, from WorldWind at the puff's
                                        live position; zero Advanced Chimneys/ForgeEndertech types (see M19)
+  cloudlayers/
+    CloudLayersWind.java              what Cloud Layers' Layer records report as velocity/offset once our wind carries
+                                       them; its one Cloud Layers call is a MethodHandle, so zero types (see M18)
   interactivefoliage/
     FoliageShaderPatch.java           pure text rewrite of IF's shaders: direction read from Weather.w (see M16)
     FoliageWind.java                  client tick: eased lean/storm/direction; the Weather vector IF's shaders get;
@@ -228,7 +231,8 @@ integration/
 mixin/
   AeroWeatherMixinPlugin.java         IMixinConfigPlugin; getMixins() withholds each optional mod's mixin unless
                                        LoadingModList says that mod is installed ("create", "particlerain", "simulated",
-                                       "mc2_interactivefoliage", "sodium", "better_cloud_shadows", "adchimneys")
+                                       "mc2_interactivefoliage", "sodium", "better_cloud_shadows", "adchimneys",
+                                       "cloud_layers")
   WindmillBearingBlockEntityMixin.java  wind-scales Create windmill speed; references Create only by
                                        string target/descriptor, never by type (see M9)
   ParticleRainWindMixin.java          replaces ParticleRain.getWind's return value with our wind; references
@@ -251,6 +255,8 @@ mixin/
                                        so its shadows stay under them; string target (M18)
   AdvancedChimneysSmokeMixin.java     after Advanced Chimneys' smoke particle sets its velocity from its own wind,
                                        overwrites it with ours; string target (M19)
+  CloudLayersMixin.java               Cloud Layers' Layer record: velocity() to 0, offset() moved on by the wind at
+                                       that layer's height; serves its renderer and Better Cloud Shadows alike (M18)
 ```
 
 **Config screen labels**: NeoForge's built-in `ConfigurationScreen` looks
@@ -1866,12 +1872,62 @@ centred on the camera by scrolling it whenever the origin moves, on either axis 
 either direction. `CloudWind`'s 24,576-block wrap makes its origin jump by 2,048 cells,
 which BCS answers with one full resample of identical data.
 
-Only BCS's vanilla path is hooked. When Better Clouds, Cloud Layers, Cirrus or Cloud Tweaks
-owns the clouds, BCS reads those mods' clouds instead, and AeroWeather doesn't move them;
-its Distant Horizons layer tracks DH's own cloud boxes. Verified against
+Only BCS's vanilla path is hooked here; its Cloud Layers path follows from the Cloud Layers
+hook below, with no BCS mixin at all. When Better Clouds, Cirrus or Cloud Tweaks owns the
+clouds, BCS reads those mods' clouds instead, and AeroWeather doesn't move them; its Distant
+Horizons layer tracks DH's own cloud boxes. Verified against
 `better_cloud_shadows-neoforge-1.21.1-1.4.0` (CurseForge project `1704307`, file
 `9208857`). String target, `remap = false`, `require = 0`, withheld by the plugin unless
 `better_cloud_shadows` is loaded.
+
+### Cloud Layers
+
+[Cloud Layers](https://www.curseforge.com/minecraft/mc-mods/cloud-layers) (modid
+`cloud_layers`, MIT, client-only) replaces vanilla's single deck with any number of layers,
+each a `Layer` record: its own `height`, `skyboxMode`, cell `scale`, `offset` and `velocity`
+(blocks per second), plus color/opacity/thickness, each a constant or a texture map. They come
+from resource packs (`assets/cloud_layers/layers/*.json`, enabled per dimension by
+`layers.json`) or, with its `useCustomLayers` option, from its config, where `genLayer()`
+builds the same record (velocity = `speed`% of 0.6 in one of four directions). The shipped
+pack's defaults are a 3D deck at 160 drifting west at 0.6 and a flat one at 256 drifting north
+at 0.6 (the config's own defaults are the same two, the upper at 80%, so 0.48).
+
+It only takes over when its mod is enabled **and clouds are Fancy**: it wraps the
+`renderClouds` call in `renderLevel` and otherwise calls the original, so on Fast the vanilla
+or Sodium hooks above run as before. Its renderer places each layer with
+`cloudX = cameraX - offset.x - time * velocity.x` (time = world ticks × 0.05, so seconds) and
+`cellZ = (cameraZ - offset.z - time * velocity.z) / scale + 0.33` (a skybox layer uses a
+camera of (0, 0, 0) and sits at `height` above it), at world Y `height + getHeightOffset()`,
+the latter being its config offset plus an optional one from the world's horizon height.
+
+**The hook is on the record, not the renderer.** BCS's Cloud Layers bridge doesn't read the
+renderer either: it rebuilds each layer's shadow origin as `offset + time * velocity` from the
+same record, at `height + getHeightOffset()`. So `CloudLayersMixin` changes what the record's
+own accessors return — `velocity()` → (0, 0), `offset()` → `offset + CloudWind.carried(height)`
+— and the renderer and BCS agree by construction, with no BCS hook. Checked in both jars that
+these are the only callers (`CloudRenderer.render` and `CloudLayersBridge.layer`, two calls
+each; the codec's `forGetter`s only encode), and that the record's `equals`/`hashCode` use
+`REF_getField`, not the accessors: Cloud Layers caches each layer's mesh in a map keyed by the
+record, and BCS takes its shadow map's signature from `hashCode()`, so a moving offset must not
+touch either. `@Shadow` reaches `height`/`skyboxMode` because they're declared on the record
+itself; `getHeightOffset()` is found once by `MethodHandle` (`CloudLayersWind`), so nothing
+names a Cloud Layers type.
+
+**One drift per height.** `CloudWind` keeps vanilla's drift and a list of per-height ones,
+keyed by (world Y, skybox), created the first frame a height is drawn and dropped after 100
+ticks undrawn (a layer hidden by its weather/time conditions isn't drawn). Layers at one height
+share air and so a drift; a skybox layer is sampled at camera Y + its height. With the default
+upper layer (centred on 192) the 160 deck follows the lower wind and the 256 deck the upper
+one. Layer drifts **don't wrap**: Cloud Layers' cells can be any size (the shipped `test` layer
+uses 4, with a map scale of 7), so no one period keeps every grid aligned, and Cloud Layers
+never wraps its own `time * velocity` either. Texture maps' own `velocity` (which reshapes a
+layer rather than moving it) is left alone; it's on `Layer$TextureMap`, a different class.
+
+Cloud Layers rebuilds a layer's mesh whenever the camera's cell under it changes, so faster
+clouds rebuild more often: at our default 2.4 blocks/s × height scaling, roughly every few
+seconds per layer instead of every 20 s, about as often as walking already causes. Verified
+against `cloud_layers-neoforge-1.21-2.0` (`gfBCPvL6`) and `2.1` (`BlQIY6t1`, the build BCS
+compiles against).
 
 **Inactive means vanilla clouds, not frozen ones:** when the option is off, or no wind
 has synced for the dimension (a server without AeroWeather), both mixins pass the
@@ -1991,7 +2047,10 @@ Aeronautics, and Sable are absent — they're optional dependencies.
   descriptors, withheld by `AeroWeatherMixinPlugin` when `sodium` is absent. Its helper,
   `client/CloudWind`, contains no Sodium references at all. `mixin/BetterCloudShadowsMixin`
   targets Better Cloud Shadows' `VanillaClouds` on the same terms, gated on
-  `better_cloud_shadows`, with the same helper.
+  `better_cloud_shadows`, with the same helper. `mixin/CloudLayersMixin` targets Cloud
+  Layers' `Layer` record on the same terms, gated on `cloud_layers`; its helper
+  `integration/cloudlayers/CloudLayersWind` reaches Cloud Layers only through a
+  `MethodHandle` looked up by name.
 - **Seventh (M19)**: `mixin/AdvancedChimneysSmokeMixin` targets Advanced Chimneys' smoke
   particle on the same terms, gated on `adchimneys`. Its helper,
   `integration/adchimneys/ChimneySmokeWind`, names neither Advanced Chimneys nor ForgeEndertech.
@@ -2151,7 +2210,9 @@ live-tested.** Verified statically: each injection target's bytecode, in vanilla
 call appears exactly once. Not confirmed yet: that the clouds actually move with the wind in
 game, under vanilla and under Sodium, and whether 2.4 blocks/s at strength 100 reads well.
 The Better Cloud Shadows hook is compile-verified against the real 1.4.0 jar's bytecode only;
-that the shadows stay under the clouds in game hasn't been checked.
+that the shadows stay under the clouds in game hasn't been checked. The same goes for Cloud
+Layers (checked against the 2.0 and 2.1 jars): not yet seen moving in game, with or without
+Better Cloud Shadows.
 
 **M19 (Advanced Chimneys smoke, see its section) is written and compile-verified, but not yet
 live-tested.** Verified statically against all nine 1.21.1 NeoForge jars. Not confirmed yet:
@@ -2300,6 +2361,10 @@ that the mixin applies at runtime, and whether 4 blocks/s reads well next to cam
   Modrinth listing, so not reachable through our Modrinth Maven). Not on the dev runtime; M18's
   mixin was written against `better_cloud_shadows-neoforge-1.21.1-1.4.0` (file `9208857`). The
   repo has a single `1.21.1` branch and no tags, so read the jar to confirm a version.
+- Cloud Layers: real modId `cloud_layers` (package `mod.lwhrvw.cloud_layers`, author
+  pymsrps), MIT, client-only, Modrinth `cloud-layers` (id `QcR2Ww1K`), CurseForge `1146749`.
+  No public source; read from the jars. 1.21.1 NeoForge builds: `2.0` (`gfBCPvL6`, needs Cloth
+  Config) and `2.1` (`BlQIY6t1`, no dependencies). Not on the dev runtime.
 - Advanced Chimneys: real modId `adchimneys`, Modrinth `advanced-chimneys` (id `r2rWUhnP`),
   CurseForge `244830`, CC-BY-ND-4.0, no public source. Requires ForgeEndertech (modId
   `forgeendertech`, Modrinth `EgS8gGp8`, same licence). Not on the dev runtime; M19 was written

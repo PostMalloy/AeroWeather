@@ -54,6 +54,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
     /** Advanced Chimneys blows its smoke with ForgeEndertech's own wind; this swaps in ours. */
     private static final String ADVANCED_CHIMNEYS_MODID = "adchimneys";
     private static final String ADVANCED_CHIMNEYS_MIXIN = "AdvancedChimneysSmokeMixin";
+    /** Cloud Layers draws its own decks, each with its own fixed drift; this hands them our wind. */
+    private static final String CLOUD_LAYERS_MODID = "cloud_layers";
+    private static final String CLOUD_LAYERS_MIXIN = "CloudLayersMixin";
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -96,6 +99,9 @@ public class AeroWeatherMixinPlugin implements IMixinConfigPlugin {
         }
         if (isLoaded(ADVANCED_CHIMNEYS_MODID)) {
             mixins.add(ADVANCED_CHIMNEYS_MIXIN);
+        }
+        if (isLoaded(CLOUD_LAYERS_MODID)) {
+            mixins.add(CLOUD_LAYERS_MIXIN);
         }
         return mixins;
     }
