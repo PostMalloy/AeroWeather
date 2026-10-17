@@ -239,7 +239,7 @@ public final class FoliageWind {
         }
 
         // At the ground below the player, not the player: grass grows at the surface, and a
-        // player flying high would otherwise apply up to 3x height scaling to grass far below.
+        // player flying high would otherwise apply up to 2x height scaling (the default cap) to grass far below.
         // A world position, so LocalWind gives world-frame wind even when stood on a ship.
         int x = player.getBlockX();
         int z = player.getBlockZ();

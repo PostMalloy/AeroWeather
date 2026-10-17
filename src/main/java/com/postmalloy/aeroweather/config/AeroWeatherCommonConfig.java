@@ -156,7 +156,7 @@ public final class AeroWeatherCommonConfig {
                     .defineInRange("exponent", 0.5, 0.0, 5.0);
             HEIGHT_MAX_MULTIPLIER = builder
                     .comment("Upper bound on the height multiplier, so extreme altitudes don't become absurd.")
-                    .defineInRange("maxMultiplier", 3.0, 1.0, 20.0);
+                    .defineInRange("maxMultiplier", 2.0, 1.0, 20.0);
             HEIGHT_SEA_LEVEL_MULTIPLIER = builder
                     .comment("Multiplier at sea level: the least wind anywhere at or above it, as a share of the base strength. The height curve takes over once it climbs past this. Below sea level there is no wind at all. 0 gives a pure power law, with no wind at sea level either.")
                     .defineInRange("seaLevelMultiplier", 0.5, 0.0, 1.0);

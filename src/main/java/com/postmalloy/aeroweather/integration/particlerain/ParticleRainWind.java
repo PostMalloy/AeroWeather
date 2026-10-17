@@ -41,7 +41,7 @@ import net.neoforged.api.distmarker.OnlyIn;
  * when local strength equals the configured reference strength. Because the
  * vector scales linearly with strength while the angle is its arctangent,
  * stronger wind keeps steepening the slant but only ever approaches horizontal
- * — no cap needed, and elevation scaling (up to 3x) can't produce a past-90°
+ * — no cap needed, and elevation scaling (up to 2x by default) can't produce a past-90°
  * nonsense angle. Every other particle type keeps its own response relative to
  * rain: snow stays gentle, dust blows nearly sideways, fog and mist drift.
  */

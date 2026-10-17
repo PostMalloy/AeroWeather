@@ -381,7 +381,7 @@ speed is clamped to 0.
   function): approximates the real-world wind profile power law, reaching
   base strength at a configurable reference height
   (`HEIGHT_REFERENCE_ABOVE_SEA_LEVEL`, default 25 blocks; exponent 0.5), capped
-  at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 3x).
+  at a configurable multiplier (`HEIGHT_MAX_MULTIPLIER`, default 2x; it was 3x).
   - **At sea level the multiplier is `HEIGHT_SEA_LEVEL_MULTIPLIER` (default 0.5), not
     0**: `max(powerLaw, seaLevelMultiplier)`. A pure power law is 0 at sea level,
     which made beaches and open ocean dead calm. It's a floor, not a blend, so the
@@ -1001,7 +1001,7 @@ where `RAIN_REFERENCE = 0.04 * 0.9 / 0.4` comes from the shipped rain preset
 - The vector scales linearly with strength while the angle is its arctangent, so
   stronger wind keeps steepening the slant yet only ever approaches horizontal.
   That's why there's no maximum-angle setting and no clamp: elevation scaling can
-  drive local strength to 3x without producing a past-90 degree angle. Defaults
+  drive local strength to 2x (3x before the default was lowered) without producing a past-90 degree angle. Defaults
   give 45 degrees at 100, ~63 at 200, ~27 at 50.
 - **Sandstorm floor.** Blowing sand that falls straight down in calm air isn't
   a sandstorm, so the vector also carries a minimum magnitude, calibrated off
@@ -1562,7 +1562,7 @@ weather work at all.
 
 `FoliageWind` samples `LocalWind` each client tick at the player's XZ but the
 **ground** height (`MOTION_BLOCKING` heightmap) — grass grows at the surface, and a
-flying player's altitude would otherwise apply up to 3× height scaling to grass far
+flying player's altitude would otherwise apply up to 2× height scaling (the default cap) to grass far
 below. `x = clamp(strength / fullLean)` (default 50); `y` ramps from full lean to
 storm strength (default 100). Both ease per tick, so an operator command doesn't snap
 every blade while a 4-second gust still visibly passes through. The first reading
