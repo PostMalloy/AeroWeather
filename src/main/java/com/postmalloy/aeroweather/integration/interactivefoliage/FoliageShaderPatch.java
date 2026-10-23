@@ -1,5 +1,7 @@
 package com.postmalloy.aeroweather.integration.interactivefoliage;
 
+import java.util.regex.Pattern;
+
 /**
  * Rewrites Interactive Foliage's shader text so the direction grass leans comes
  * from the {@code Weather} uniform instead of a hard-coded constant (M16).
@@ -8,8 +10,8 @@ package com.postmalloy.aeroweather.integration.interactivefoliage;
  * rewrite can be checked offline against the real shader files.
  *
  * <h2>Why {@code Weather.w}</h2>
- * IF's wind direction is {@code const vec2 WIND_DIRECTION = vec2(-1.0, 0.0)}, baked
- * into two separate shader sources that reach the GPU three different ways. A new
+ * IF's wind direction is a fixed west, {@code vec2(-1.0, 0.0)}, baked into two
+ * separate shader sources that reach the GPU three different ways. A new
  * uniform would have to be plumbed through all three, and IF's
  * {@code foliage_legacy.json} only exposes the uniforms it lists, so vanilla's
  * {@code ShaderInstance} couldn't even set one. {@code Weather} already reaches
@@ -18,14 +20,29 @@ package com.postmalloy.aeroweather.integration.interactivefoliage;
  * provided the fade uses the literal instead.
  *
  * <h2>The negative sentinel</h2>
- * An angle is sent as {@code w = -(angle + 10)}, which is always negative, while IF's
- * fade is always positive. Every patched expression checks the sign: negative means
- * "our direction, a fade of 4", positive means "IF's own direction and this fade",
- * and in that case each expression is IF's original text verbatim. So a patched
- * shader behaves identically to IF's unless it is handed an angle, which is what lets
- * {@link FoliageWind} fall back to strength-only at any time without the shader and
- * the uniform ever disagreeing. The offset of 10 only has to exceed pi, so that angle
- * 0 still encodes as negative.
+ * An angle is sent as {@code w = -(angle + 10)}, which is always below
+ * {@link #ENCODED_ANGLE_BELOW}, while IF's fade is always positive. Every patched
+ * expression checks the sign: negative means "AeroWeather's wind, a fade of 4",
+ * positive means "IF's own direction and this fade", and in that case each expression
+ * is IF's original text verbatim. So a patched shader behaves identically to IF's
+ * unless it is handed a negative {@code w}, which is what lets {@link FoliageWind} fall
+ * back to strength-only at any time without the shader and the uniform ever
+ * disagreeing. The offset of 10 only has to exceed pi, so that angle 0 still encodes
+ * well below the threshold.
+ * <p>
+ * Between the threshold and 0 ({@link #OWN_DIRECTION}) means our wind, but blowing the
+ * way IF's own direction says. That's for Sable sub-levels (IF 2.2+): IF turns a world
+ * vector into each ship's plot frame itself, and {@link FoliageWind} hands it our wind
+ * to turn in place of its west, so on a ship IF's direction already is ours.
+ *
+ * <h2>Leaving IF's declaration alone</h2>
+ * IF words its direction differently per file and version: a {@code const} in
+ * {@code sway.glsl}, and from 2.2 a {@code #define} choosing the sub-level wind in
+ * {@code foliage_legacy.vsh}. With Sable installed IF 2.2 also rewrites its own
+ * {@code sway.glsl}, after we do, by finding that exact {@code const} line and renaming
+ * every use. So the declaration is never touched: the wind function reads it once into
+ * a local of ours, which picks between it and the decoded angle, and every use inside
+ * the function reads the local. Whatever IF makes of its name, our local wraps it.
  *
  * <h2>Why the gust wave is crossfaded, not rotated</h2>
  * IF's gust is a travelling wave, {@code sin(-dot(world.xz, direction) * k + t)},
@@ -68,21 +85,32 @@ package com.postmalloy.aeroweather.integration.interactivefoliage;
 public final class FoliageShaderPatch {
     /** The names one shader source uses for everything the patch touches. */
     public record Names(String direction, String weather, String scale, String time, String gustSpeed,
-            String windCall) {
+            String windFunction, String windCall) {
     }
 
     /** {@code include/sway.glsl}, spliced into the vanilla terrain and Iris programs. */
     public static final Names SWAY = new Names(
             "MC2_WIND_DIRECTION", "mc2_Weather", "MC2_SWAY_SCALE", "gameTime", "MC2_GUST_SPEED",
+            "vec2 mc2_wind(vec3 world, float phase, float gameTime, float reach, float shake) {",
             "mc2_wind(world, phase, gameTime, reach, shake)");
 
     /** {@code core/foliage_legacy.vsh}, IF's own shader for the Sodium path. */
     public static final Names LEGACY = new Names(
             "WIND_DIRECTION", "Weather", "SWAY_SCALE", "GameTime", "GUST_SPEED",
+            "vec2 wind(vec3 world, float phase, float reach, float shake) {",
             "wind(world, phase, reach, shake)");
 
     /** Added to the angle before negating; anything above pi keeps an angle of 0 negative. */
     public static final float ANGLE_OFFSET = 10.0f;
+
+    /** A {@code w} below this carries an angle: every encoded one is under {@code -(ANGLE_OFFSET - pi)}. */
+    public static final float ENCODED_ANGLE_BELOW = -5.0f;
+
+    /** Our wind, blowing the way IF's own direction says: sent while IF draws a Sable sub-level. */
+    public static final float OWN_DIRECTION = -1.0f;
+
+    /** IF's {@code WEATHER_WIND_FADE_BLOCKS}: the fade width {@code w} used to carry. */
+    public static final float IF_FADE_BLOCKS = 4.0f;
 
     /** Fraction of full lean below which there is no storm shake at all: strength 20 by default. */
     public static final float SHAKE_START_LEAN = 0.4f;
@@ -93,48 +121,60 @@ public final class FoliageShaderPatch {
     /** How many fixed axes the gust crossfades between. */
     public static final int GUST_SECTORS = 16;
 
-    /** IF's {@code WEATHER_WIND_FADE_BLOCKS}: the fade width {@code w} used to carry. */
-    private static final String FADE_BLOCKS = "4.0";
+    /** The local the wind function reads its direction from once patched. */
+    private static final String DIRECTION = "aeroweather_direction";
 
     private FoliageShaderPatch() {
     }
 
     /**
      * The source with its direction taken from {@code weather.w}, its gust crossfaded
-     * and its storm shake ramped in with the lean, or {@code null} if any of the four
-     * targets isn't there exactly once — the caller then leaves the shader as IF wrote
-     * it, which is always safe.
+     * and its storm shake ramped in with the lean, or {@code null} if anything it
+     * touches isn't there exactly as expected — the caller then leaves the shader as IF
+     * wrote it, which is always safe.
      */
     public static String patch(String source, Names names) {
         String w = names.weather() + ".w";
-        String constant = "const vec2 " + names.direction() + " = vec2(-1.0, 0.0);";
         String fade = names.weather() + ".z - " + w;
         String gustOriginal = "0.5 + 0.5 * sin(along * " + names.scale() + " + "
                 + names.time() + " * " + names.gustSpeed() + ")";
         String gustLine = "float gust = " + gustOriginal + ";";
-        if (count(source, constant) != 1 || count(source, fade) != 1 || count(source, gustLine) != 1
+        if (count(source, names.windFunction()) != 1 || count(source, fade) != 1
                 || count(source, names.windCall()) != 1) {
+            return null;
+        }
+        int open = source.indexOf(names.windFunction()) + names.windFunction().length();
+        int close = source.indexOf("\n}", open);
+        if (close < 0) {
+            return null;
+        }
+        String body = source.substring(open, close);
+        // The direction is used inside the wind function and declared exactly once outside it,
+        // however that declaration is worded. A use anywhere else is text we haven't seen.
+        Pattern direction = Pattern.compile("\\b" + Pattern.quote(names.direction()) + "\\b");
+        int inBody = count(direction, body);
+        if (inBody == 0 || count(direction, source) - inBody != 1 || count(body, gustLine) != 1) {
             return null;
         }
 
         String encoded = w + " < 0.0";
         String angle = "(-" + w + " - " + ANGLE_OFFSET + ")";
 
-        // A #define, not a const: its value now comes from a uniform, which a const can't
-        // hold. Legal because every use of the name is inside a function body, where the
-        // macro expands and the uniform is declared by then - never in another global const
-        // initialiser. Checked against both sources.
-        String define = "#define " + names.direction() + " (" + encoded
-                + " ? vec2(cos" + angle + ", sin" + angle + ")"
-                + " : vec2(-1.0, 0.0))";
+        // The one read of IF's direction; IF's own text is used verbatim unless w carries an angle.
+        String local = "vec2 " + DIRECTION + " = " + w + " < " + ENCODED_ANGLE_BELOW
+                + " ? vec2(cos" + angle + ", sin" + angle + ") : " + names.direction() + ";";
 
-        String fadeWithSentinel = names.weather() + ".z - (" + encoded + " ? " + FADE_BLOCKS + " : " + w + ")";
+        String fadeWithSentinel = names.weather() + ".z - (" + encoded + " ? " + IF_FADE_BLOCKS + " : " + w + ")";
 
         // Statements, not one expression, since the line sits inside the function body. IF's
-        // own `along` line above is left untouched: with the gust no longer reading it, it's
-        // dead code the compiler drops.
+        // own `along` line above is left in place: with the gust no longer reading it, it's
+        // dead code the compiler drops. The angle is the local's, not w's, so a sub-level's
+        // direction is crossfaded too; a zero vector (wind straight down a tipped ship's
+        // stalks) has no angle, and atan(0, 0) is undefined in GLSL.
         String sectorWidth = Float.toString((float) (2.0 * Math.PI / GUST_SECTORS));
-        String crossfade = "float aeroweather_sector = " + angle + " / " + sectorWidth + ";\n"
+        String crossfade = "float aeroweather_angle = dot(" + DIRECTION + ", " + DIRECTION + ") > 0.0"
+                + " ? atan(" + DIRECTION + ".y, " + DIRECTION + ".x) : 0.0;\n"
+                + "    float aeroweather_sector = aeroweather_angle / " + sectorWidth + ";\n"
                 + "    float aeroweather_base = floor(aeroweather_sector);\n"
                 + "    float aeroweather_blend = aeroweather_sector - aeroweather_base;\n"
                 + "    vec2 aeroweather_axisA = vec2(cos(aeroweather_base * " + sectorWidth + "), "
@@ -151,10 +191,12 @@ public final class FoliageShaderPatch {
                 + names.weather() + ".x) : 1.0)";
         String windCallRamped = names.windCall().replace("shake)", "shake * " + shakeRamp + ")");
 
-        return source.replace(names.windCall(), windCallRamped)
-                .replace(gustLine, crossfade)
-                .replace(fade, fadeWithSentinel)
-                .replace(constant, define);
+        // The local goes in after the uses are renamed, since it's the one place IF's name stays.
+        String patchedBody = "\n    " + local
+                + direction.matcher(body).replaceAll(DIRECTION).replace(gustLine, crossfade);
+        String patched = source.substring(0, open) + patchedBody + source.substring(close);
+        return patched.replace(names.windCall(), windCallRamped)
+                .replace(fade, fadeWithSentinel);
     }
 
     /** IF's gust formula, travelling along a fixed {@code axis} instead of the wind direction. */
@@ -174,5 +216,9 @@ public final class FoliageShaderPatch {
             count++;
         }
         return count;
+    }
+
+    private static int count(Pattern pattern, String text) {
+        return (int) pattern.matcher(text).results().count();
     }
 }

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
+import org.joml.Vector3f;
 import org.joml.Vector4f;
 
 import com.postmalloy.aeroweather.AeroWeather;
@@ -57,12 +58,15 @@ public final class FoliageWind {
     private static final String MOD_ID = "mc2_interactivefoliage";
 
     /** IF versions whose shader text {@link FoliageShaderPatch} was checked against. */
-    private static final List<String> VERIFIED_VERSION_PREFIXES = List.of("2.0.", "2.1.");
+    private static final List<String> VERIFIED_VERSION_PREFIXES = List.of("2.0.", "2.1.", "2.2.");
 
     private static final boolean LOADED = ModCompat.isLoaded(MOD_ID);
 
     /** Set once any shader patch misses its target; from then on only strength is driven. */
     private static volatile boolean patchFailed;
+
+    /** True while IF draws a Sable sub-level's foliage (IF 2.2+), which takes its direction from IF; render thread only. */
+    private static boolean drawingSubLevel;
 
     // Eased state, written on the client tick and read by the render thread's weather() call.
     // Both are the client thread in vanilla, so no synchronisation.
@@ -144,8 +148,40 @@ public final class FoliageWind {
         if (!enabled() || original.z == 0.0f) {
             return original;
         }
-        float w = directionActive() ? encodedDirection() : original.w;
+        float w = !directionActive() ? original.w
+                : drawingSubLevel ? FoliageShaderPatch.OWN_DIRECTION : encodedDirection();
         return new Vector4f(lean(), storm(), original.z, w);
+    }
+
+    /**
+     * The {@code Weather} for a pipeline whose shader we never patch: IF 2.2's VulkanMod
+     * path builds its own from an untouched {@code sway.glsl}. There a negative {@code w}
+     * would be read as a fade width, and an inverted fade blows no wind at all near the
+     * player, so it gets IF's own fade back and keeps only our strength.
+     */
+    public static Vector4f forUnpatchedShader(Vector4f weather) {
+        return weather.w < 0.0f ? new Vector4f(weather.x, weather.y, weather.z, FoliageShaderPatch.IF_FADE_BLOCKS)
+                : weather;
+    }
+
+    /**
+     * IF 2.2 draws a Sable sub-level's foliage with the world's west turned into the
+     * ship's frame as its wind, and the shader reads it as IF's own direction. Handing
+     * IF our travel direction in its place lets its own rotation do the work, so on a
+     * ship grass leans with our wind as the ship sees it. The vector is only read on a
+     * sub-level pass; the world's pass takes its angle from {@code w}.
+     */
+    public static Vector3f subLevelWind(Vector3f west) {
+        if (!directionActive()) {
+            return west;
+        }
+        Vec3 travel = WindDirection.travelVector(renderedFromBearingDeg());
+        return west.set((float) travel.x, 0.0f, (float) travel.z);
+    }
+
+    /** Set around each sub-level IF draws, in a try/finally as IF sets its own flag. */
+    public static void setDrawingSubLevel(boolean drawing) {
+        drawingSubLevel = drawing;
     }
 
     /**

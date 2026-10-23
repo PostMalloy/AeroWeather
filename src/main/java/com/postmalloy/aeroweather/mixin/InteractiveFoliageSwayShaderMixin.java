@@ -17,6 +17,11 @@ import com.postmalloy.aeroweather.integration.interactivefoliage.FoliageWind;
  * here doesn't change that: a mixin applies when its target loads, and never makes
  * it load.
  * <p>
+ * IF 2.2's VulkanMod and Beryl paths have {@code readSway}s of their own and are left
+ * alone on purpose: they feed shader converters our text has never been checked
+ * against, so they keep IF's direction and {@code InteractiveFoliageWindMixin} keeps
+ * our encoded {@code w} away from them.
+ * <p>
  * String targets only, withheld without IF, {@code require = 0} — see
  * {@link InteractiveFoliageWindMixin}.
  */

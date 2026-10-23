@@ -1535,6 +1535,14 @@ on waving leaves) calls a second time, so our fade sentinel and shake ramp cover
 path too. Its new `foliage_modern`/`foliage_uniforms` shaders are for newer Minecraft
 only; the 1.21.1 build never loads them.
 
+**2.2 (`D3Cajmzf`, `2.2.1` = `oKmXJIL5`) broke direction, silently**: grass leaned IF's fixed
+west whatever our wind did, so a west wind looked exactly 180° wrong (reported). Two causes,
+both ours: the version gate only knew `2.0.`/`2.1.`, and `foliage_legacy.vsh`'s `const vec2
+WIND_DIRECTION` had become a Sable-aware `#define`, so the old patch missed it, which also set
+the global `patchFailed`. 2.2 also added Sable sub-level foliage and a VulkanMod/Beryl path; see
+"IF 2.2: ships and VulkanMod" below. Every hook was re-verified against the 2.2.0 and 2.2.1
+bytecode, and `weather()`'s body is unchanged.
+
 **SWAY has no wind at all** — only entity pushes — so only IF is touched. IF
 requires SWAY; we never do, and don't declare it.
 
@@ -1583,8 +1591,8 @@ sway — are derived from one eased strength, so they can't drift out of step.
 
 ### Direction rides `Weather.w`
 
-The direction is a hard-coded `const vec2 = vec2(-1.0, 0.0)` (lean west, i.e. wind
-from the east) in **two** shader sources that reach the GPU **three** ways:
+The direction is a hard-coded west, `vec2(-1.0, 0.0)` (lean west, i.e. wind from the east),
+in **two** shader sources that reach the GPU **three** ways:
 
 | Source | Loaded by | Pipeline |
 |---|---|---|
@@ -1598,25 +1606,36 @@ Instead `w` — which `weather()` already delivers everywhere — carries the an
 the shader text is rewritten so the fade uses IF's literal `4.0`.
 
 **The negative sentinel** makes that safe to switch on and off at any time. An angle
-is sent as `w = -(atan2(travel.z, travel.x) + 10)`, always negative; IF's fade is
+is sent as `w = -(atan2(travel.z, travel.x) + 10)`, always below −6.86; IF's fade is
 always positive. The patched shader checks the sign:
 
 ```glsl
-#define WIND_DIRECTION (Weather.w < 0.0 ? vec2(cos(-Weather.w - 10.0), sin(-Weather.w - 10.0)) : vec2(-1.0, 0.0))
+// first line of the wind function; every use of IF's name in it then reads the local
+vec2 aeroweather_direction = Weather.w < -5.0 ? vec2(cos(-Weather.w - 10.0), sin(-Weather.w - 10.0)) : WIND_DIRECTION;
 smoothstep(Weather.z - (Weather.w < 0.0 ? 4.0 : Weather.w), Weather.z, ...)
 ```
 
 So a patched shader handed IF's own value behaves **bit-identically** to IF's original
-— including its `w = 0` edge case when wind is off. A `#define` is legal where the
-`const` was because every use of the name is inside a function body, never in another
-global `const` initialiser (checked against both sources). Wind from the east encodes
-to `atan2(0, -1) = π` and decodes to `(-1, 0)`, reproducing IF's default exactly;
-the round trip is exact to ~4e-7 across all bearings.
+— including its `w = 0` edge case when wind is off. Wind from the east encodes to
+`atan2(0, -1) = π` and decodes to `(-1, 0)`, reproducing IF's default exactly; the round
+trip is exact to ~4e-7 across all bearings. A `w` between −5 and 0 (`OWN_DIRECTION`, −1)
+means our wind blowing IF's own direction, which is what ship passes send (below).
 
-The patches are exact-string replacements in `FoliageShaderPatch` (pure, no MC types,
-checked offline against the real files), four per source: the direction `const`, the
-fade expression, the gust line and the call to the wind function. Any one missing and
-the source is left untouched.
+**IF's declaration is never touched.** It's a `const` in `sway.glsl`, but in 2.2's
+`foliage_legacy.vsh` a `#define` choosing the sub-level wind, and with Sable installed IF 2.2
+rewrites its own `sway.glsl` (`SubLevelFoliageShader.withSway`, after our patch) by finding that
+exact `const` line and renaming every use to `mc2_subLevelWindDirection()`. The first version
+replaced the `const` with our own `#define`, which would have hidden it from that rewrite. The
+local wraps whatever IF's name becomes. No preprocessor line is added either: IF notes that some
+of its shaders go through a parser that takes none.
+
+The patches live in `FoliageShaderPatch` (pure, no MC types, checked offline against the real
+files): the wind function (found by signature, its direction uses renamed, the local added, the
+gust line crossfaded), the fade expression and the call to the wind function. IF's direction
+name must appear in the function and exactly once outside it (its declaration, however worded).
+Anything else and the source is left untouched. **Every 2.0.0–2.2.1 source, unpatched and
+patched, and 2.2's sub-level splice compiled with glslang 16.6.0** (Minecraft's `#moj_import`s
+stubbed); a deliberately broken copy fails, so the harness is real.
 
 ### The storm shake fades in with the lean
 
@@ -1695,15 +1714,41 @@ band orientations mix. One residual: the 230-cycle wrap is only seamless for
 axis-aligned waves, so a diagonal sector's gust can twitch once as the camera crosses a
 multiple of 4096 blocks.
 
+The crossfade's angle is `atan` of the local direction rather than decoded from `w` (the same
+value in the world, to float precision), so a ship's turned direction is crossfaded too;
+a zero vector gets angle 0, since `atan(0, 0)` is undefined in GLSL.
+
+### IF 2.2: ships and VulkanMod
+
+IF 2.2 draws Sable sub-level foliage in passes of its own: `drawSubLevels` calls `drawLegacy`
+inside its static `subLevelPass` flag, and `drawLegacyRuns` builds `new Vector3f(-1, 0, 0)` (the
+world's west), turns it into the ship's plot frame and uploads its x/z as `mc2_SubLevelWind`,
+which its shaders use as the direction on a ship. Three `InteractiveFoliageWindMixin` hooks, all
+`require = 0` and absent before 2.2 (checked: no `Vector3f(FFF)` or VulkanMod caller exists in
+2.0.0–2.1.1's renderer):
+- `@WrapOperation` on that `drawLegacy` call sets `FoliageWind.drawingSubLevel` in a try/finally,
+  and `weather()` then sends `OWN_DIRECTION` (−1) instead of an angle. `@Shadow` of
+  `subLevelPass` was rejected: a shadow can't be optional, and the field doesn't exist in 2.1.
+- `@ModifyExpressionValue` at `NEW (FFF)Lorg/joml/Vector3f;` in `drawLegacyRuns` (its only one)
+  sets that vector to our travel direction, so IF's own rotation carries our wind into the ship's
+  frame, including its shortening as wind blows along a tipped ship's stalks. Unused on world passes.
+- `@ModifyExpressionValue` on `weather()` in `drawLegacyThroughVulkanMod` puts IF's `4.0` back:
+  VulkanMod and Beryl compile `sway.glsl` through their own `readSway`s, which we don't patch
+  (their shader converters are untested with our text), so they get strength only.
+
 ### Falling back
 
 Direction is only encoded when **all** hold: the integration and direction options
-are on, IF's version starts `2.0.` or `2.1.` (the text that was verified), and no attempted
-patch has failed. Otherwise `w` stays IF's own value, which every shader — patched
+are on, IF's version starts `2.0.`, `2.1.` or `2.2.` (the text that was verified), and no
+attempted patch has failed. Otherwise `w` stays IF's own value, which every shader — patched
 or not — reads as IF's own direction and fade. An IF update can at worst drop us to
 strength-only; it can never feed a negative `w` to an unpatched shader, where
-`smoothstep` would get `edge0 > edge1`. Every injector is `require = 0`, so a renamed
-IF method logs rather than crashes.
+`smoothstep` would get `edge0 > edge1` (no wind at all near the player). Every injector is
+`require = 0`, so a renamed IF method logs rather than crashes. **That makes an IF update
+fail quietly**: grass keeps IF's fixed west, which for a west wind is exactly backwards. The log's
+"isn't a version AeroWeather has verified" line is the tell; when a new IF version appears,
+diff its `sway.glsl`/`foliage_legacy.vsh` against the last verified one, rerun the patch, and
+extend the prefix list.
 
 ### Shelter
 
@@ -2193,9 +2238,11 @@ direction change no longer scrambles it. A residual jitter at high wind was then
 interpolating per frame and capping the turn rate — compile-verified only. Verified statically: every IF descriptor against the binary
 jar; both shader patches applied to the real `sway.glsl` and `foliage_legacy.vsh` and
 the angle round trip checked offline; IF referenced only as strings in the three
-mixins, nothing bundled, and `mods.toml` declaring it optional. **Not verified:** that
-the patched GLSL compiles (no `glslangValidator` was available), and all three render
-pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on them.
+mixins, nothing bundled, and `mods.toml` declaring it optional. **Not verified:** all three
+render pipelines in game — vanilla, Sodium and an Iris shaderpack each need eyes on them.
+**The IF 2.2 fix** (direction backwards/fixed on 2.2, see the section) is compile-verified,
+its GLSL compiled with glslang for every version 2.0.0–2.2.1, and its mixin targets checked
+against the 2.2.1 bytecode; not yet seen in game, on land or on a ship.
 
 **M17 (the upper wind layer, see its section) is written and compile-verified, but not yet
 live-tested.** Verified offline against the compiled classes: the band's blend weights, the
@@ -2344,8 +2391,11 @@ that the mixin applies at runtime, and whether 4 blocks/s reads well next to cam
   whose HEAD targets much newer Minecraft.
 - Interactive Foliage: https://github.com/Kart0/mc2-interactivefoliage. Real modId
   `mc2_interactivefoliage`, Modrinth `mc2-interactive-foliage` (id `ba5MV2CF`),
-  pinned to `2.1.1-neoforge+1.21.1` (`wyQ8QFgr`; M16 was first written against
-  `2.0.0`, `szHc87G5`, tag `2.0.0` = commit `560c535`), client-only, requires SWAY. Stonecutter multi-version tree, so read the tag, not HEAD.
+  pinned to `2.2.1-neoforge+1.21.1` (`oKmXJIL5`; M16 was first written against
+  `2.0.0`, `szHc87G5`, tag `2.0.0` = commit `560c535`, then 2.1.1, `wyQ8QFgr`), client-only,
+  requires SWAY. Modrinth also publishes a `-sources.jar` per version; its Stonecutter
+  branches for other Minecraft versions are commented out, so check the binary jar for which
+  classes are live on 1.21.1. Stonecutter multi-version tree, so read the tag, not HEAD.
 - SWAY: https://github.com/RazorPlay01/SWAY. Real modId `sway`, Modrinth `sway` (id
   `Gj6Yce3v`), pinned to `2.4.5-neoforge+1.21.1` (`uGTq42kW`). On our dev runtime only
   because IF needs it; AeroWeather never touches it.
